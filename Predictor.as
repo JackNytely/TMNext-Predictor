@@ -91,10 +91,10 @@ string getTimeString(int givenTime) {
 		int minTimeAbsolute = 0;
 		int hrTimeAbsolute = 0;
 
-		msTimeAbsolute = givenTime;
-		secTimeAbsolute = Math::Round(givenTime / 1000);
-		minTimeAbsolute = Math::Round(givenTime / (1000 * 60));
-		hrTimeAbsolute = Math::Round(givenTime / (1000 * 60 * 60));
+		msTimeAbsolute = int(givenTime);
+		secTimeAbsolute = int(Math::Round(givenTime / 1000));
+		minTimeAbsolute = int(Math::Round(givenTime / (1000 * 60)));
+		hrTimeAbsolute = int(Math::Round(givenTime / (1000 * 60 * 60)));
 
 		int msTimeFinal = msTimeAbsolute - (secTimeAbsolute * 1000);
 		int secTimeFinal = secTimeAbsolute - (minTimeAbsolute * 60);
