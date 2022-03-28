@@ -49,10 +49,25 @@ namespace CP {
 	* Get the Author Time for the Current map
 	*/
 	int mapAuthorTime = 0;
+
+	/**
+	* Get the Lap Count for the Current Map
+	*/
+	bool isLapRace = false;
+
+	/**
+	* Get the Lap Count for the Current Map
+	*/
+	int maxLap = 0;
+
+	/**
+	* Get the Current Lap the User is on
+	*/
+	int curLap = 0;
 	
 	/**
-	 * Update should be called once per tick, within the plugin's Update(dt) function.
-	 */
+	* Update should be called once per tick, within the plugin's Update(dt) function.
+	*/
 
 	void Update() {
 
@@ -60,6 +75,7 @@ namespace CP {
 		* Intialize the Playground, MedalAPP and Map Objects
 		*/
 		auto playground = cast<CSmArenaClient>(GetApp().CurrentPlayground);
+		auto CGameCtnChallengeTest = playground;
 		auto medalApp = cast<CTrackMania>(GetApp());
 		auto map = medalApp.RootMap;
 		
@@ -94,6 +110,10 @@ namespace CP {
 		* Check if the Player started a New Run
 		*/
 		if(NewStart == false && curCP < 1 && player.StartTime != startTime) {
+			isLapRace = playground.Map.TMObjective_IsLapRace;
+			maxLap = playground.Map.TMObjective_NbLaps;
+			curLap = 0;
+
 			NewStart = true;
 
 			startTime = player.StartTime;
@@ -130,6 +150,12 @@ namespace CP {
 			preCPIdx = player.CurrentLaunchedRespawnLandmarkIndex;
 			curCP = 0;
 			maxCP = 0;
+			curLap = 0;
+			isLapRace = false;
+			
+			maxLap = playground.Map.TMObjective_NbLaps;
+			isLapRace = playground.Map.TMObjective_IsLapRace;
+
 			strictMode = true;
 			
 			array<int> links = {};
@@ -137,15 +163,27 @@ namespace CP {
 				if(landmarks[i].Waypoint !is null && !landmarks[i].Waypoint.IsFinish && !landmarks[i].Waypoint.IsMultiLap) {
 					// we have a CP, but we don't know if it is Linked or not
 					if(landmarks[i].Tag == "Checkpoint") {
-						maxCP++;
+						if(isLapRace) {
+							maxCP += maxLap;
+						} else{
+							maxCP++;
+						}
 					} else if(landmarks[i].Tag == "LinkedCheckpoint") {
 						if(links.Find(landmarks[i].Order) < 0) {
-							maxCP++;
+							if(isLapRace) {
+								maxCP += maxLap;
+							} else{
+								maxCP++;
+							}
 							links.InsertLast(landmarks[i].Order);
 						}
 					} else {
 						// this waypoint looks like a CP, acts like a CP, but is not called a CP.
-						maxCP++;
+						if(isLapRace) {
+							maxCP += maxLap;
+						} else{
+							maxCP++;
+						}
 						strictMode = false;
 					}
 				}
@@ -162,7 +200,12 @@ namespace CP {
 			if(landmarks[preCPIdx].Waypoint is null || landmarks[preCPIdx].Waypoint.IsFinish || landmarks[preCPIdx].Waypoint.IsMultiLap) {
 				// if null, it's a start block. if the other flags, it's either a multilap or a finish.
 				// in all such cases, we reset the completed cp count to zero.
-				curCP = 0;
+
+				if(isLapRace) {
+					curCP++;
+				}else{
+					curCP = 0;
+				}
 			} else {
 				curCP++;
 			}
