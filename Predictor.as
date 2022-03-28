@@ -63,8 +63,6 @@ void Update(float dt) {
 		startTime = Time::get_Now();
 		predictedTimeString = "00:00:00:000";
 
-		print(CP::maxCP);
-
 		lastCP = 0;
 	}
 	
