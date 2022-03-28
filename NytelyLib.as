@@ -109,10 +109,11 @@ namespace CP {
 		/**
 		* Check if the Player started a New Run
 		*/
-		if(NewStart == false && curCP < 1 && player.StartTime != startTime) {
+		if(NewStart == false && player.StartTime != startTime) {
 			isLapRace = playground.Map.TMObjective_IsLapRace;
 			maxLap = playground.Map.TMObjective_NbLaps;
 			curLap = 0;
+			curCP = 0;
 
 			NewStart = true;
 

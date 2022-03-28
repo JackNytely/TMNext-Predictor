@@ -59,6 +59,8 @@ void Render() {
 void Update(float dt) {
 
 	if(CP::NewStart == true) {
+		CP::curLap = 0;
+		CP::curCP = 0;
 		CP::NewStart = false;
 		startTime = Time::get_Now();
 		predictedTimeString = "00:00:00:000";
