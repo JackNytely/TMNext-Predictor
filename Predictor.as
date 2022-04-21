@@ -104,11 +104,18 @@ void Update(float dt) {
 			string cpSplitString = string::Join(cpSplits, ":");
 
 			string currentSplitFileString = NytelyLib::ReadFromFile(NytelyLib::curMapId, "config\\Predictor\\MapSets\\");
-			array<string> currentSplitFileArray = currentSplitFileString.Split(":");
-			int currentSplitFileFinishTime = Text::ParseInt(currentSplitFileArray[NytelyLib::maxCP - 1]);
 
-			if(currentSplitFileString == "File not Found" || raceTime < currentSplitFileFinishTime){
+			if(currentSplitFileString == "File not Found"){
+
 				NytelyLib::WriteToFile(NytelyLib::curMapId, "config\\Predictor\\MapSets\\", cpSplitString);
+			}else {
+
+				array<string> currentSplitFileArray = currentSplitFileString.Split(":");
+				int currentSplitFileFinishTime = Text::ParseInt(currentSplitFileArray[NytelyLib::maxCP - 1]);
+
+				if(raceTime < currentSplitFileFinishTime){
+					NytelyLib::WriteToFile(NytelyLib::curMapId, "config\\Predictor\\MapSets\\", cpSplitString);
+				}
 			}
 		}
 
