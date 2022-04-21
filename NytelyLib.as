@@ -2,7 +2,7 @@
  * author: Phlarx + JackNytely
  */
 
-namespace CP {
+namespace NytelyLib {
 	/**
 	 * If true, then this plugin has detected that we are in game, on a map.
 	 * If false, none of the other values are valid.
@@ -28,7 +28,7 @@ namespace CP {
 	/**
 	 * The number of checkpoints detected for the current map.
 	 */
-	uint maxCP = 0;
+	uint maxCP = 1;
 	
 	/**
 	 * Internal values.
@@ -58,6 +58,11 @@ namespace CP {
 	/**
 	* Get the Lap Count for the Current Map
 	*/
+	bool isFinish = false;
+
+	/**
+	* Get the Lap Count for the Current Map
+	*/
 	int maxLap = 0;
 
 	/**
@@ -75,9 +80,7 @@ namespace CP {
 		* Intialize the Playground, MedalAPP and Map Objects
 		*/
 		auto playground = cast<CSmArenaClient>(GetApp().CurrentPlayground);
-		auto CGameCtnChallengeTest = playground;
 		auto medalApp = cast<CTrackMania>(GetApp());
-		auto map = medalApp.RootMap;
 		
 		/**
 		* Check if the Player is currently in a Match
@@ -88,6 +91,10 @@ namespace CP {
 			|| playground.GameTerminals.Length <= 0
 			|| playground.GameTerminals[0].UISequence_Current != CGamePlaygroundUIConfig::EUISequence::Playing
 			|| cast<CSmPlayer>(playground.GameTerminals[0].GUIPlayer) is null) {
+
+			/**
+			* Indicate the Player is not currently in a Match and breaks the Script
+			*/
 			inGame = false;
 			return;
 		}
@@ -110,20 +117,23 @@ namespace CP {
 		* Check if the Player started a New Run
 		*/
 		if(NewStart == false && player.StartTime != startTime) {
+
+			/**
+			* Set the Required Variables on New Start of a Run
+			*/
 			isLapRace = playground.Map.TMObjective_IsLapRace;
+			isFinish = true;
 			maxLap = playground.Map.TMObjective_NbLaps;
 			curLap = 0;
 			curCP = 0;
-
 			NewStart = true;
-
 			startTime = player.StartTime;
 		}
 
 		/**
 		* Get the Current Author time for Specified Map
 		*/
-		mapAuthorTime = map.TMObjective_AuthorTime;
+		mapAuthorTime = playground.Map.TMObjective_AuthorTime;
 		
 		/**
 		* Check if the User wants the Timer Hidden with the Current Interface and Hide the Timer if Interface is Hidden
@@ -150,12 +160,15 @@ namespace CP {
 			curMapId = playground.Map.IdName;
 			preCPIdx = player.CurrentLaunchedRespawnLandmarkIndex;
 			curCP = 0;
-			maxCP = 0;
+			maxCP = 1;
 			curLap = 0;
 			isLapRace = false;
 			
 			maxLap = playground.Map.TMObjective_NbLaps;
 			isLapRace = playground.Map.TMObjective_IsLapRace;
+			if(isLapRace){
+				maxCP = maxLap;
+			}
 
 			strictMode = true;
 			
@@ -199,17 +212,124 @@ namespace CP {
 			preCPIdx = player.CurrentLaunchedRespawnLandmarkIndex;
 			
 			if(landmarks[preCPIdx].Waypoint is null || landmarks[preCPIdx].Waypoint.IsFinish || landmarks[preCPIdx].Waypoint.IsMultiLap) {
+				
+				if(landmarks[preCPIdx].Waypoint !is null && landmarks[preCPIdx].Waypoint.IsFinish){
+					isFinish = true;
+				}else{	
+					isFinish = false;
+				}
+
 				// if null, it's a start block. if the other flags, it's either a multilap or a finish.
 				// in all such cases, we reset the completed cp count to zero.
 
 				if(isLapRace) {
 					curCP++;
 				}else{
-					curCP = 0;
+					if(isFinish){
+						curCP++;
+					}else{
+						curCP = 0;
+					}
 				}
 			} else {
 				curCP++;
 			}
 		}
+	}
+
+	void WriteToFile(string fileName, string folderPath, string fileContents){
+		string filePath = folderPath + fileName + ".nyte";
+
+		// Create the Config Folder for the Plugin
+		IO::CreateFolder(IO::FromDataFolder(folderPath), true);
+
+		// build a file path relative to the OpenplanetNext folder
+		auto fileDataFolderPath = IO::FromDataFolder(filePath);
+	
+		// call the file constructor with that path
+		IO::File file(fileDataFolderPath);
+	
+		// open the file for writing
+		file.Open(IO::FileMode::Write);
+	
+		// write the data you want
+		file.Write(fileContents);
+	
+		// close the file (which also finalizes any writes)
+		file.Close();
+	}
+
+	string ReadFromFile(string fileName, string folderPath){
+		string filePath = folderPath + fileName + ".nyte";
+
+		// Create the Config Folder for the Plugin
+		//IO::CreateFolder(IO::FromDataFolder(folderPath), true);
+
+		if(IO::FileExists(IO::FromDataFolder(filePath))){
+
+			// build a file path relative to the OpenplanetNext folder
+			auto fileDataFolderPath = IO::FromDataFolder(filePath);
+	
+			// call the file constructor with that path
+			IO::File file(fileDataFolderPath);
+	
+			// open the file for writing
+			file.Open(IO::FileMode::Read);
+
+			// write the data you want
+			string fileContents = file.ReadLine();
+	
+			// close the file (which also finalizes any writes)
+			file.Close();
+			return fileContents;
+		}else{
+			return "File not Found";
+		}
+	}
+
+	string GetTimeString(int givenTime) {
+		int msTimeAbsolute = 0;
+		int secTimeAbsolute = 0;
+		int minTimeAbsolute = 0;
+		int hrTimeAbsolute = 0;
+
+		msTimeAbsolute = int(givenTime);
+		secTimeAbsolute = int(Math::Round(givenTime / 1000));
+		minTimeAbsolute = int(Math::Round(givenTime / (1000 * 60)));
+		hrTimeAbsolute = int(Math::Round(givenTime / (1000 * 60 * 60)));
+
+		int msTimeFinal = msTimeAbsolute - (secTimeAbsolute * 1000);
+		int secTimeFinal = secTimeAbsolute - (minTimeAbsolute * 60);
+		int minTimeFinal = minTimeAbsolute - (hrTimeAbsolute * 60);
+		int hrTimeFinal = hrTimeAbsolute;
+
+		string msTimeString = "" + msTimeFinal;
+		string secTimeString = "" + secTimeFinal;
+		string minTimeString = "" + minTimeFinal;
+		string hrTimeString = "" + hrTimeFinal;
+
+		if(msTimeFinal < 100 && msTimeFinal > 10) {
+			msTimeString = "0" + msTimeFinal;
+		}
+
+		if(msTimeFinal < 10) {
+			msTimeString = "00" + msTimeFinal;
+		}
+
+		if(secTimeFinal < 10) {
+			secTimeString = "0" + secTimeFinal;
+		}
+
+		if(minTimeFinal < 10) {
+			minTimeString = "0" + minTimeFinal;
+		}
+
+		if(hrTimeFinal < 10) {
+			hrTimeString = "0" + hrTimeFinal;
+		}
+
+		string resultString = hrTimeString + ":" + minTimeString + ":" + secTimeString + ":" + msTimeString;
+
+		return resultString;
 	}
 }
