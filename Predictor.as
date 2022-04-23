@@ -17,14 +17,14 @@ float YPos = .91;
 bool showBackground = false;
 
 [Setting name="Font size" min=8 max=72]
-int fontSize = 24;
+uint fontSize = 24;
 
 [Setting color name="Font color"]
 vec4 fontColor = vec4(1, 1, 1, 1);
 
-int startTime = 0;
-int lastCP = 0;
-int predictedTime = 0;
+uint startTime = 0;
+uint lastCP = 0;
+uint predictedTime = 0;
 bool recordTrack = true;
 string predictedTimeString = "00:00:00:000";
 string compareCPSplitString;
@@ -66,7 +66,7 @@ void Update(float dt) {
 		NytelyLib::curLap = 0;
 		NytelyLib::curCP = 0;
 		NytelyLib::NewStart = false;
-		startTime = Time::get_Now() + 1500;
+		startTime = Time::Now + 1500;
 		predictedTimeString = "00:00:00:000";
 
 		compareCPSplitString = NytelyLib::ReadFromFile(NytelyLib::curMapId, "config\\Predictor\\MapSets\\");
@@ -80,13 +80,13 @@ void Update(float dt) {
 		lastCP = 0;
 	}
 	
-	if((Time::get_Now() - startTime) > 0 && NytelyLib::curCP > lastCP) {
+	if(Time::Now - startTime > 0 && NytelyLib::curCP > lastCP) {
 
 		lastCP = NytelyLib::curCP;
 
-		int raceTime = Time::get_Now() - startTime;
+		uint raceTime = Time::Now - startTime;
 
-		int avgTimePerLap = raceTime / 1;
+		uint avgTimePerLap = raceTime / 1;
 
 		if(NytelyLib::curCP > 0) {
 			avgTimePerLap = raceTime / NytelyLib::curCP;
@@ -96,7 +96,7 @@ void Update(float dt) {
 			if(NytelyLib::isFinish && NytelyLib::curCP == NytelyLib::maxCP){
 
 			}
-			cpSplits[NytelyLib::curCP - 1] = Time::get_Now() - startTime + "";
+			cpSplits[NytelyLib::curCP - 1] = TimeLib::GetRaceTime() + "";
 		}
 
 		if(cpSplits[NytelyLib::maxCP - 1] != "0"){
@@ -111,7 +111,7 @@ void Update(float dt) {
 			}else {
 
 				array<string> currentSplitFileArray = currentSplitFileString.Split(":");
-				int currentSplitFileFinishTime = Text::ParseInt(currentSplitFileArray[NytelyLib::maxCP - 1]);
+				uint currentSplitFileFinishTime = Text::ParseInt(currentSplitFileArray[NytelyLib::maxCP - 1]);
 
 				if(raceTime < currentSplitFileFinishTime){
 					NytelyLib::WriteToFile(NytelyLib::curMapId, "config\\Predictor\\MapSets\\", cpSplitString);
