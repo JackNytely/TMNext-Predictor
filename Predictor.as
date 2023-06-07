@@ -32,21 +32,23 @@ array<string> cpSplits;
 array<string> compareCPSplitArray;
 
 string curFontFace = "";
-Resources::Font@ font;
+nvg::Font font;
 
 void Render() {
 	if(showTimer && NytelyLib::inGame) {
 		string text = predictedTimeString;
 		
 		nvg::FontSize(fontSize);
-		if(font !is null) {
+		if(Math::IsNaN(font)) {
 			nvg::FontFace(font);
 		}
 		nvg::TextAlign(nvg::Align::Center | nvg::Align::Middle);
 		
 		if(showBackground) {
 			nvg::FillColor(vec4(0, 0, 0, 0.8));
-			vec2 size = nvg::TextBoxBounds(XPos * Draw::GetWidth() - 100, YPos * Draw::GetHeight(), 200, text);
+			//vec2 size = nvg::TextBoxBounds(XPos * Draw::GetWidth() - 100, YPos * Draw::GetHeight(), 200, text);
+			//vec2 size = nvg::TextBounds(text);
+			vec2 size = nvg::TextBoxBounds(200, text);
 			nvg::BeginPath();
 			nvg::RoundedRect(XPos * Draw::GetWidth() - size.x * 0.6, YPos * Draw::GetHeight() - size.y * 0.67, size.x * 1.2, size.y * 1.2, 5);
 			nvg::Fill();
@@ -60,7 +62,6 @@ void Render() {
 }
 
 void Update(float dt) {
-
 	if(NytelyLib::NewStart == true) {
 		cpSplits = array<string>(NytelyLib::maxCP, "0");
 		NytelyLib::curLap = 0;

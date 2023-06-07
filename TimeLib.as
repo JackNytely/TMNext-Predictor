@@ -8,14 +8,17 @@ namespace TimeLib {
     //Setup the GetRaceTime Function
     int GetRaceTime() {
 
+        //Setup the App
+        CGameCtnApp @app = GetApp();
+
         //Setup the Network
-        CGameCtnNetwork @network = GetApp().Network;
+        CGameCtnNetwork @network = app.Network;;
 
         //Get the Playground from the Network
         CGameManiaAppPlayground @networkPlayground = network.ClientManiaAppPlayground;
     
         //Get the UI Layer from the Playground
-        CGameUILayer @UILayer = networkPlayground.UILayers[8];
+        CGameUILayer @UILayer = networkPlayground.UILayers[7];
 
         //Get the Local Page from the UI Layer
         CGameManialinkPage @LocalPage = UILayer.LocalPage;
@@ -34,10 +37,11 @@ namespace TimeLib {
 
         //Get the Race Time Label
         CGameManialinkControl @raceTimeLabel = cast<CGameManialinkFrame>(raceTimeFrame).Controls[1];
-    
+
         //Get the Race Time
         CGameManialinkLabel @raceTime = cast<CGameManialinkLabel>(raceTimeLabel);
-
+        print(raceTime.Value);
+    
        //Check if the raceTime has Errored
         if(raceTime is null) {
 
@@ -52,7 +56,7 @@ namespace TimeLib {
 }
 
 //Setup a Function to Convert a Time String into a Unix Timestamp
-int TimeStringToUnixTime(string TimeString) {
+int TimeStringToUnixTime(const string TimeString) {
 
     //Get the Minutes, Seconds and Milliseconds from the Time String
     int minutes = Text::ParseInt(TimeString.Split(':')[0]) * 60000;

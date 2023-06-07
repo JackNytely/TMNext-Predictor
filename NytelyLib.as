@@ -237,7 +237,7 @@ namespace NytelyLib {
 		}
 	}
 
-	void WriteToFile(string fileName, string folderPath, string fileContents){
+	void WriteToFile(const string fileName, const string folderPath, const string fileContents){
 		string filePath = folderPath + fileName + ".nyte";
 
 		// Create the Config Folder for the Plugin
@@ -259,7 +259,7 @@ namespace NytelyLib {
 		file.Close();
 	}
 
-	string ReadFromFile(string fileName, string folderPath){
+	string ReadFromFile(const string fileName, const string folderPath){
 		string filePath = folderPath + fileName + ".nyte";
 
 		// Create the Config Folder for the Plugin
