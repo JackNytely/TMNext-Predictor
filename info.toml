@@ -5,3 +5,5 @@ category = "Utilities"
 siteid = 160
 version = "2.0"
 
+[script]
+optional_dependencies = ["DID"]
