@@ -34,6 +34,12 @@ array<string> compareCPSplitArray;
 string curFontFace = "";
 nvg::Font font;
 
+void Main() {
+#if DEPENDENCY_DID
+	DID::registerLaneProviderAddon(PredictorProvider());
+#endif
+}
+
 void Render() {
 	if(showTimer && NytelyLib::inGame) {
 		string text = predictedTimeString;
