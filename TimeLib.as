@@ -50,22 +50,7 @@ namespace TimeLib {
         }else{
 
             //Return the Race Time
-            return TimeStringToUnixTime(raceTime.Value);
+            return Time::ParseRelativeTime(raceTime.Value);
         }
     }
-}
-
-//Setup a Function to Convert a Time String into a Unix Timestamp
-int TimeStringToUnixTime(const string TimeString) {
-
-    //Get the Minutes, Seconds and Milliseconds from the Time String
-    int minutes = Text::ParseInt(TimeString.Split(':')[0]) * 60000;
-    int seconds = Text::ParseInt(TimeString.Split(':')[1].Split('.')[0]) * 1000;
-    int milliseconds = Text::ParseInt(TimeString.Split(':')[1].Split('.')[1]);
-
-    //Combine the Minutes, Seconds and Milliseconds into the required Unix Timestamp
-    int UnixTimestamp = minutes + seconds + milliseconds;
-
-    //Return the Unixe Timestamp
-    return UnixTimestamp;
 }
