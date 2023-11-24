@@ -17,7 +17,13 @@ if (!fs.existsSync(Openplanet_Plugins_Directory))
 //Zip the Contents of the Source Directory
 zip(Source_Directory, `${Openplanet_Plugins_Directory}/Predictor-DEV.op`);
 
+//Zip the Contents of the Source Directory to the Releases Directory
+zip(Source_Directory, `${process.cwd()}/Releases/Predictor.op`);
+
 //Log Successful Build
 console.log(
-	`\n-=+=- Plugin Built Successfully to -- ${Openplanet_Plugins_Directory}/Predictor-DEV.op`
+	`
+	\n-=+=- Plugin Built Successfully to -- ${Openplanet_Plugins_Directory}/Predictor-DEV.op
+	\n-=+=- Plugin Built Successfully to -- ${process.cwd()}/Releases/Predictor.op
+	`
 );
