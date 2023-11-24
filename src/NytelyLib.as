@@ -77,10 +77,15 @@ namespace NytelyLib {
 	void Update() {
 
 		/**
+        * Setup the App
+		*/
+		CGameCtnApp @app = GetApp();
+
+		/**
 		* Intialize the Playground, MedalAPP and Map Objects
 		*/
-		auto playground = cast<CSmArenaClient>(GetApp().CurrentPlayground);
-		auto medalApp = cast<CTrackMania>(GetApp());
+		auto playground = cast<CSmArenaClient>(app.CurrentPlayground);
+		auto medalApp = cast<CTrackMania>(app);
 		
 		/**
 		* Check if the Player is currently in a Match
@@ -93,7 +98,18 @@ namespace NytelyLib {
 			|| cast<CSmPlayer>(playground.GameTerminals[0].GUIPlayer) is null) {
 
 			/**
-			* Indicate the Player is not currently in a Match and breaks the Script
+			* Indicate the Player is not currently in a Match and break the Script
+			*/
+			inGame = false;
+			return;
+		}
+
+		/**
+		* Check if the Player is currently in the Editor
+		*/
+		if(app.Editor !is null) {
+			/**
+			* Indicate the Player is not currently in a Match and break the Script
 			*/
 			inGame = false;
 			return;

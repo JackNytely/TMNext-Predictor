@@ -18,7 +18,7 @@ namespace TimeLib {
         CGameManiaAppPlayground @networkPlayground = network.ClientManiaAppPlayground;
     
         //Get the UI Layer from the Playground
-        CGameUILayer @UILayer = networkPlayground.UILayers[7];
+        CGameUILayer @UILayer = networkPlayground.UILayers[6];
 
         //Get the Local Page from the UI Layer
         CGameManialinkPage @LocalPage = UILayer.LocalPage;

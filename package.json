@@ -1,0 +1,17 @@
+{
+	"name": "tmnext-predictor",
+	"version": "2.1.0",
+	"description": "",
+	"main": "Build_Plugin.ts",
+	"scripts": {
+		"build": "ts-node ./Build_Plugin"
+	},
+	"author": "JackNytely",
+	"license": "ISC",
+	"devDependencies": {
+		"ts-node": "^10.9.1"
+	},
+	"dependencies": {
+		"zip-a-folder": "^2.0.0"
+	}
+}
