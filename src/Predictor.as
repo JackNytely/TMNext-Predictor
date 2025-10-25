@@ -1,141 +1,1300 @@
-/*
- * author: JackNytely
+#include "Settings.as"
+
+/**
+ * Main Predictor Plugin Namespace
+ * 
+ * Contains the core prediction logic, UI rendering, and data management
+ * for the Trackmania 2020 finish time predictor plugin.
+ * 
+ * @namespace Predictor
  */
-[Setting name="Show Timer"]
-bool showTimer = true;
+namespace Predictor {
+    
+    /**
+     * Main PredictorCore class that handles all prediction functionality
+     * 
+     * This class manages:
+     * - Race data collection from MLFeedRaceData
+     * - Time prediction calculations using various methods
+     * - Overlay rendering and user interaction
+     * - Settings management and data persistence
+     * - DID (Display Information Display) integration
+     * 
+     * @class PredictorCore
+     */
+    class PredictorCore {
+        // ============================================================================
+        // INITIALIZATION STATE
+        // ============================================================================
+        
+        /** Whether the plugin has been successfully initialized */
+        private bool isInitialized = false;
+        
+        /** Current map ID for tracking map changes */
+        private string currentMapId = "";
+        
+        /** Race start time from MLFeedRaceData */
+        private uint startTime = 0;
+        
+        /** Time of the last checkpoint passed */
+        private uint lastCheckpointTime = 0;
+        
+        /** Current checkpoint number (0-based) */
+        private int currentCheckpoint = 0;
+        
+        /** Total number of checkpoints in the current map */
+        private int totalCheckpoints = 0;
+        
+        /** Whether we're currently in a race */
+        private bool isInGame = false;
+        
+        /** Whether the race has started */
+        private bool hasStarted = false;
+        
+        // ============================================================================
+        // PREDICTION DATA
+        // ============================================================================
+        
+        /** Predicted finish time in milliseconds */
+        private uint predictedTime = 0;
+        
+        /** Formatted predicted time string (MM:SS.mmm) */
+        private string predictedTimeString = "00:00.000";
+        
+        /** Formatted delta time string (+/-MM:SS.mmm) */
+        private string deltaTimeString = "+00:00.000";
+        
+        /** Array storing checkpoint times for current run */
+        private array<uint> checkpointSplits;
+        
+        /** Array storing best checkpoint times for current map */
+        private array<uint> bestSplits;
+        
+        /** Array storing last completed run for comparison */
+        private array<uint> lastRunSplits;
+        
+        /** Current race time for restart detection */
+        private uint currentRaceTime = 0;
+        
+        /** Current settings tab (0 = General, 1 = Data) */
+        private int settingsTab = 0;
+        
+        /** Array of editable split times for manual editing */
+        private array<string> editableSplits;
+        
+        // ============================================================================
+        // WINDOW MANAGEMENT
+        // ============================================================================
+        
+        /** Current position of the overlay window */
+        private vec2 overlayPosition = vec2(50, 50);
+        /** Whether we've initialized overlay position from settings yet */
+        private bool overlayInitialized = false;
+        
+        /** Current size of the overlay window */
+        private vec2 overlaySize = vec2(300, 150);
+        
+        /** Whether the overlay is currently being dragged */
+        private bool isDraggingOverlay = false;
+        
+        /** Whether the overlay is currently being resized */
+        private bool isResizingOverlay = false;
+        
+        /** Offset from mouse position when dragging started */
+        private vec2 dragOffset = vec2(0, 0);
+        
+        /** Which edge is being resized (0=none, 1=left, 2=right, 3=top, 4=bottom) */
+        private int resizeEdge = 0;
+        
+        // ============================================================================
+        // PUBLIC GETTERS FOR DID SUPPORT
+        // ============================================================================
+        
+        /** @returns {string} Current predicted time string */
+        string get_PredictedTimeString() const { return predictedTimeString; }
+        
+        /** @returns {string} Current delta time string */
+        string get_DeltaTimeString() const { return deltaTimeString; }
+        
+        /** @returns {int} Current checkpoint number */
+        int get_CurrentCheckpoint() const { return currentCheckpoint; }
+        
+        /** @returns {int} Total number of checkpoints */
+        int get_TotalCheckpoints() const { return totalCheckpoints; }
+        
+        // ============================================================================
+        // UI STATE
+        // ============================================================================
+        
+        /** Font handle for text rendering */
+        private nvg::Font font;
+        
+        /** Whether the font was successfully loaded */
+        private bool fontLoaded = false;
 
-[Setting name="Hide Timer when interface is hidden"]
-bool hideTimerWithInterface = false;
-
-[Setting name="X position" min=0 max=1]
-float XPos = .5;
-
-[Setting name="Y position" min=0 max=1]
-float YPos = .91;
-
-[Setting name="Show background"]
-bool showBackground = false;
-
-[Setting name="Font size" min=8 max=72]
-uint fontSize = 24;
-
-[Setting color name="Font color"]
-vec4 fontColor = vec4(1, 1, 1, 1);
-
-uint startTime = 0;
-uint lastCP = 0;
-uint predictedTime = 0;
-bool recordTrack = true;
-string predictedTimeString = "00:00:00:000";
-string compareCPSplitString;
-array<string> cpSplits;
-array<string> compareCPSplitArray;
-
-string curFontFace = "";
-nvg::Font font;
-
-void Main() {
+        /**
+         * Initialize the predictor plugin
+         * 
+         * Sets up fonts, reserves memory for checkpoint data, and registers
+         * DID providers if available. This method should be called once
+         * when the plugin is loaded.
+         * 
+         * @method Initialize
+         */
+        void Initialize() {
+            if (isInitialized) return;
+            
+            // Load the font for text rendering
+            font = nvg::LoadFont("DroidSans.ttf");
+            fontLoaded = !Math::IsNaN(font);
+            
+            // Reserve space for checkpoint data arrays
+            checkpointSplits.Resize(100);
+            bestSplits.Resize(100);
+            
 #if DEPENDENCY_DID
-	DID::registerLaneProviderAddon(PredictorProvider());
+            // Register DID providers for external overlay integration
+            DID::registerLaneProviderAddon(PredictorProvider());
+            DID::registerLaneProviderAddon(PredictorDeltaProvider());
+            DID::registerLaneProviderAddon(PredictorCheckpointProvider());
 #endif
-}
+            
+            isInitialized = true;
+            print("Predictor initialized successfully");
+        }
 
-void Render() {
-	if(showTimer && NytelyLib::inGame) {
-		string text = predictedTimeString;
-		
-		nvg::FontSize(fontSize);
-		if(Math::IsNaN(font)) {
-			nvg::FontFace(font);
-		}
-		nvg::TextAlign(nvg::Align::Center | nvg::Align::Middle);
-		
-		if(showBackground) {
-			nvg::FillColor(vec4(0, 0, 0, 0.8));
-			//vec2 size = nvg::TextBoxBounds(XPos * Draw::GetWidth() - 100, YPos * Draw::GetHeight(), 200, text);
-			//vec2 size = nvg::TextBounds(text);
-			vec2 size = nvg::TextBoxBounds(200, text);
-			nvg::BeginPath();
-			nvg::RoundedRect(XPos * Draw::GetWidth() - size.x * 0.6, YPos * Draw::GetHeight() - size.y * 0.67, size.x * 1.2, size.y * 1.2, 5);
-			nvg::Fill();
-			nvg::ClosePath();
-		}
-		
-			nvg::FillColor(fontColor);
-		
-		nvg::TextBox(XPos * Draw::GetWidth() - 100, YPos * Draw::GetHeight(), 200, text);
-	}
-}
+        /**
+         * Main update method called every frame
+         * 
+         * Checks game state, updates race data, and calculates predictions.
+         * This is the main loop that keeps the predictor running.
+         * 
+         * @method Update
+         * @param {float} millisecondsSinceLastFrame - Time elapsed since last frame
+         */
+        void Update(float millisecondsSinceLastFrame) {
+            if (!isInitialized) return;
 
-void Update(float dt) {
-	if(NytelyLib::NewStart == true) {
-		cpSplits = array<string>(NytelyLib::maxCP, "0");
-		NytelyLib::curLap = 0;
-		NytelyLib::curCP = 0;
-		NytelyLib::NewStart = false;
-		startTime = Time::Now + 1500;
-		predictedTimeString = "00:00:00:000";
+            // Check if we're currently in a race
+            CheckGameState();
+            
+            // If we're not in a game, reset the race state
+            if (!isInGame) {
+                hasStarted = false;
+                return;
+            }
 
-		compareCPSplitString = NytelyLib::ReadFromFile(NytelyLib::curMapId, "config\\Predictor\\MapSets\\");
+            // Get latest race data from MLFeedRaceData
+            UpdateRaceData();
+            
+            // Calculate prediction based on current progress
+            CalculatePrediction();
+        }
 
-		if(compareCPSplitString != "File not Found") {
-			compareCPSplitArray = compareCPSplitString.Split(":");
+        /**
+         * Check if we're currently in a valid game state for prediction
+         * 
+         * Validates that we're in a race (not editor), have a valid playground,
+         * and are actually playing. Also checks interface visibility settings.
+         * 
+         * @method CheckGameState
+         * @private
+         */
+        private void CheckGameState() {
+            auto app = GetApp();
+            auto playground = cast<CSmArenaClient>(app.CurrentPlayground);
+            
+            // Check if we have a valid playground and map
+            if (playground is null || playground.Arena is null || playground.Map is null) {
+                isInGame = false;
+                return;
+            }
 
-			predictedTimeString = NytelyLib::GetTimeString(Text::ParseInt(compareCPSplitArray[NytelyLib::maxCP - 1]));
-		}
+            // Don't run in the editor
+            if (app.Editor !is null) {
+                isInGame = false;
+                return;
+            }
 
-		lastCP = 0;
-	}
-	
-	if(Time::Now - startTime > 0 && NytelyLib::curCP > lastCP) {
+            // Check if we have game terminals (players)
+            if (playground.GameTerminals.Length <= 0) {
+                isInGame = false;
+                return;
+            }
 
-		lastCP = NytelyLib::curCP;
+            auto terminal = playground.GameTerminals[0];
+            // Check if we're actually playing (not in menu, etc.)
+            if (terminal.UISequence_Current != CGamePlaygroundUIConfig::EUISequence::Playing) {
+                isInGame = false;
+                return;
+            }
 
-		uint raceTime = Time::Now - startTime;
+            auto player = cast<CSmPlayer>(terminal.GUIPlayer);
+            if (player is null) {
+                isInGame = false;
+                return;
+            }
 
-		uint avgTimePerLap = raceTime / 1;
+            // Check interface visibility setting
+            if (hideWithInterface) {
+                if (playground.Interface is null || Dev::GetOffsetUint32(playground.Interface, 0x1C) == 0) {
+                    isInGame = false;
+                    return;
+                }
+            }
 
-		if(NytelyLib::curCP > 0) {
-			avgTimePerLap = raceTime / NytelyLib::curCP;
-		}
+            isInGame = true;
+        }
 
-		if(recordTrack = true) {
-			if(NytelyLib::isFinish && NytelyLib::curCP == NytelyLib::maxCP){
+        /**
+         * Update race data from MLFeedRaceData
+         * 
+         * Gets the latest race information including map changes, race starts,
+         * checkpoint progress, and total checkpoint count.
+         * 
+         * @method UpdateRaceData
+         * @private
+         */
+        private void UpdateRaceData() {
+            // Get latest race data from MLFeedRaceData
+            auto raceData = MLFeed::GetRaceData_V4();
+            if (raceData is null) return;
 
-			}
-			cpSplits[NytelyLib::curCP - 1] = TimeLib::GetRaceTime() + "";
-		}
+            // Check for map changes
+            string mapId = raceData.Map;
+            if (mapId != currentMapId) OnMapChange(mapId);
+            
 
-		if(cpSplits[NytelyLib::maxCP - 1] != "0"){
-			
-			string cpSplitString = string::Join(cpSplits, ":");
+            // Get local player data
+            auto localPlayer = raceData.LocalPlayer;
+            if (localPlayer is null) return;
 
-			string currentSplitFileString = NytelyLib::ReadFromFile(NytelyLib::curMapId, "config\\Predictor\\MapSets\\");
+            // Check if race has started or restarted
+            if (localPlayer.StartTime > 0 && (!hasStarted || localPlayer.StartTime != startTime)) OnRaceStart(localPlayer.StartTime);
 
-			if(currentSplitFileString == "File not Found"){
+            // Update checkpoint progress
+            int newCheckpoint = localPlayer.CpCount;
+            if (newCheckpoint != currentCheckpoint) OnCheckpointPassed(newCheckpoint, localPlayer.StartTime);
 
-				NytelyLib::WriteToFile(NytelyLib::curMapId, "config\\Predictor\\MapSets\\", cpSplitString);
-			}else {
+            // Update total checkpoints from race data
+            totalCheckpoints = raceData.CPsToFinish;
+        }
 
-				array<string> currentSplitFileArray = currentSplitFileString.Split(":");
-				uint currentSplitFileFinishTime = Text::ParseInt(currentSplitFileArray[NytelyLib::maxCP - 1]);
+        /**
+         * Handle map change event
+         * 
+         * Resets all race state when entering a new map and loads
+         * the best splits for that map.
+         * 
+         * @method OnMapChange
+         * @param {string} mapId - The new map ID
+         * @private
+         */
+        private void OnMapChange(const string &in mapId) {
+            currentMapId = mapId;
+            hasStarted = false;
+            currentCheckpoint = 0;
+            startTime = 0;
+            lastCheckpointTime = 0;
+            
+            // Load best splits for this map
+            LoadBestSplits(mapId);
+        }
 
-				if(raceTime < currentSplitFileFinishTime){
-					NytelyLib::WriteToFile(NytelyLib::curMapId, "config\\Predictor\\MapSets\\", cpSplitString);
-				}
-			}
-		}
+        /**
+         * Handle race start event
+         * 
+         * Resets prediction state when a race starts or restarts.
+         * 
+         * @method OnRaceStart
+         * @param {uint} raceStartTime - The race start time
+         * @private
+         */
+        private void OnRaceStart(uint raceStartTime) {
+            startTime = raceStartTime;
+            hasStarted = true;
+            currentCheckpoint = 0;
+            lastCheckpointTime = 0;
+            
+            // Reset prediction strings
+            predictedTimeString = "00:00.000";
+            deltaTimeString = "+00:00.000";
+            
+            // Reset checkpoint splits array
+            for (uint i = 0; i < checkpointSplits.Length; i++) {
+                checkpointSplits[i] = 0;
+            }
+            
+            print("Race started - checkpoint counter reset");
+        }
 
-		if(compareCPSplitString != "File not Found") {
-			avgTimePerLap = Text::ParseInt(compareCPSplitArray[NytelyLib::maxCP - 1]) / NytelyLib::maxCP;
+        /**
+         * Handle checkpoint passed event
+         * 
+         * Updates checkpoint data when a new checkpoint is reached and
+         * saves best splits if the race is finished.
+         * 
+         * @method OnCheckpointPassed
+         * @param {int} checkpoint - The checkpoint number that was passed
+         * @param {uint} raceStartTime - The race start time
+         * @private
+         */
+        private void OnCheckpointPassed(int checkpoint, uint raceStartTime) {
+            if (!hasStarted) return;
+            
+            if (checkpoint > currentCheckpoint) {
+                // Get race data to access checkpoint times
+                auto raceData = MLFeed::GetRaceData_V4();
+                if (raceData is null) return;
+                
+                auto localPlayer = raceData.LocalPlayer;
+                if (localPlayer is null) return;
+                
+                // Use MLFeedRaceData's checkpoint times
+                if (checkpoint < localPlayer.cpTimes.Length) {
+                    checkpointSplits[checkpoint] = localPlayer.cpTimes[checkpoint];
+                    lastCheckpointTime = localPlayer.cpTimes[checkpoint];
+                    currentCheckpoint = checkpoint;
+                    
+                    // Check if race is finished and save best splits
+                    if (checkpoint == totalCheckpoints && localPlayer.IsFinished) SaveBestSplits(currentMapId);
+                    
+                }
+            }
+        }
 
-			predictedTime = (Text::ParseInt(compareCPSplitArray[NytelyLib::maxCP - 1])+(raceTime - Text::ParseInt(compareCPSplitArray[NytelyLib::curCP - 1])));
-		}else{
-			predictedTime = (avgTimePerLap * ((NytelyLib::maxCP + 1) - NytelyLib::curCP)) + raceTime;
-		}
+        /**
+         * Calculate the predicted finish time
+         * 
+         * Gets current race time and calculates prediction using the selected method.
+         * Also formats the time strings for display.
+         * 
+         * @method CalculatePrediction
+         * @private
+         */
+        private void CalculatePrediction() {
+            if (!hasStarted) {
+                predictedTime = 0;
+                predictedTimeString = "00:00.000";
+                deltaTimeString = "+00:00.000";
+                return;
+            }
 
-		predictedTimeString = NytelyLib::GetTimeString(predictedTime);
-	}
+            // Get current race time from MLFeedRaceData
+            auto raceData = MLFeed::GetRaceData_V4();
+            if (raceData is null) return;
+            
+            auto localPlayer = raceData.LocalPlayer;
+            if (localPlayer is null) return;
+            
+            uint currentTime = localPlayer.lastCpTime;
+            currentRaceTime = currentTime;
+            
+            // Calculate prediction using selected method
+            CalculateStandardPrediction(currentTime);
 
-	NytelyLib::Update();
+            // Format time strings for display
+            predictedTimeString = FormatTime(predictedTime);
+            
+            // Calculate delta time if enabled and we have best splits
+            if (showDeltaTime && bestSplits.Length > totalCheckpoints) {
+                int delta = int(predictedTime) - int(bestSplits[totalCheckpoints]);
+                deltaTimeString = FormatDeltaTime(delta);
+            }
+        }
+
+        /**
+         * Route to the appropriate prediction calculation method
+         * 
+         * @method CalculateStandardPrediction
+         * @param {uint} currentTime - Current race time in milliseconds
+         * @private
+         */
+        private void CalculateStandardPrediction(uint currentTime) {
+            switch (predictionMethod) {
+                case PredictorMethod::LinearExtrapolation:
+                    CalculateLinearPrediction(currentTime);
+                    break;
+                case PredictorMethod::BestSplitsComparison:
+                    CalculateBestSplitsPrediction(currentTime);
+                    break;
+                case PredictorMethod::Hybrid:
+                    CalculateHybridPrediction(currentTime);
+                    break;
+            }
+        }
+
+        /**
+         * Calculate prediction using linear extrapolation
+         * 
+         * Assumes constant pace throughout the race based on average time per checkpoint.
+         * Simple but not very accurate method.
+         * 
+         * @method CalculateLinearPrediction
+         * @param {uint} currentTime - Current race time in milliseconds
+         * @private
+         */
+        private void CalculateLinearPrediction(uint currentTime) {
+            if (currentCheckpoint == 0) {
+                predictedTime = currentTime;
+                return;
+            }
+
+            // Calculate average time per checkpoint
+            uint avgTimePerCheckpoint = currentTime / currentCheckpoint;
+            
+            // Predict remaining time
+            uint remainingCheckpoints = totalCheckpoints - currentCheckpoint;
+            uint predictedRemainingTime = avgTimePerCheckpoint * remainingCheckpoints;
+            
+            predictedTime = currentTime + predictedRemainingTime;
+        }
+
+        /**
+         * Calculate prediction using best splits comparison
+         * 
+         * Compares current run to personal best checkpoint times for more accurate prediction.
+         * Falls back to linear method if no best splits are available.
+         * 
+         * @method CalculateBestSplitsPrediction
+         * @param {uint} currentTime - Current race time in milliseconds
+         * @private
+         */
+        private void CalculateBestSplitsPrediction(uint currentTime) {
+            if (bestSplits.Length <= totalCheckpoints) {
+                // Fallback to linear if no best splits available
+                CalculateLinearPrediction(currentTime);
+                return;
+            }
+
+            if (currentCheckpoint == 0) {
+                predictedTime = bestSplits[totalCheckpoints];
+                return;
+            }
+
+            // Use best splits to predict
+            uint bestTimeToCurrentCheckpoint = bestSplits[currentCheckpoint];
+            uint bestTotalTime = bestSplits[totalCheckpoints];
+            
+            // Calculate how much faster/slower we are compared to best
+            float paceRatio = float(currentTime) / float(bestTimeToCurrentCheckpoint);
+            
+            predictedTime = uint(float(bestTotalTime) * paceRatio);
+        }
+
+        /**
+         * Calculate prediction using hybrid method
+         * 
+         * Combines linear extrapolation and best splits comparison with weighted average.
+         * Uses 70% best splits + 30% linear extrapolation for balanced accuracy.
+         * 
+         * @method CalculateHybridPrediction
+         * @param {uint} currentTime - Current race time in milliseconds
+         * @private
+         */
+        private void CalculateHybridPrediction(uint currentTime) {
+            // Calculate linear prediction
+            uint linearPrediction = 0;
+            if (currentCheckpoint > 0) {
+                uint avgTimePerCheckpoint = currentTime / currentCheckpoint;
+                uint remainingCheckpoints = totalCheckpoints - currentCheckpoint;
+                linearPrediction = currentTime + (avgTimePerCheckpoint * remainingCheckpoints);
+            } else {
+                linearPrediction = currentTime;
+            }
+            
+            // Calculate best splits prediction
+            uint bestSplitsPrediction = 0;
+            if (bestSplits.Length > totalCheckpoints && currentCheckpoint > 0) {
+                uint bestTimeToCurrentCheckpoint = bestSplits[currentCheckpoint];
+                uint bestTotalTime = bestSplits[totalCheckpoints];
+                float paceRatio = float(currentTime) / float(bestTimeToCurrentCheckpoint);
+                bestSplitsPrediction = uint(float(bestTotalTime) * paceRatio);
+            } else {
+                bestSplitsPrediction = linearPrediction;
+            }
+            
+            // Weight the predictions (70% best splits, 30% linear)
+            predictedTime = uint(0.7 * float(bestSplitsPrediction) + 0.3 * float(linearPrediction));
+        }
+
+        /**
+         * Format time in milliseconds to MM:SS.mmm or HH:MM:SS.mmm format
+         * 
+         * @method FormatTime
+         * @param {uint} timeMs - Time in milliseconds
+         * @returns {string} Formatted time string
+         * @private
+         */
+        private string FormatTime(uint timeMs) {
+            uint totalMs = timeMs;
+            uint seconds = totalMs / 1000;
+            uint minutes = seconds / 60;
+            uint hours = minutes / 60;
+            
+            uint ms = totalMs % 1000;
+            seconds = seconds % 60;
+            minutes = minutes % 60;
+            
+            if (hours > 0) {
+                string hourStr = hours < 10 ? "0" + hours : "" + hours;
+                string minStr = minutes < 10 ? "0" + minutes : "" + minutes;
+                string secStr = seconds < 10 ? "0" + seconds : "" + seconds;
+                string msStr = ms < 10 ? "00" + ms : (ms < 100 ? "0" + ms : "" + ms);
+                return hourStr + ":" + minStr + ":" + secStr + "." + msStr;
+            } else {
+                string minStr = minutes < 10 ? "0" + minutes : "" + minutes;
+                string secStr = seconds < 10 ? "0" + seconds : "" + seconds;
+                string msStr = ms < 10 ? "00" + ms : (ms < 100 ? "0" + ms : "" + ms);
+                return minStr + ":" + secStr + "." + msStr;
+            }
+        }
+
+        /**
+         * Format delta time with +/- sign
+         * 
+         * @method FormatDeltaTime
+         * @param {int} deltaMs - Delta time in milliseconds (can be negative)
+         * @returns {string} Formatted delta time string with sign
+         * @private
+         */
+        private string FormatDeltaTime(int deltaMs) {
+            string sign = deltaMs >= 0 ? "+" : "-";
+            uint absMs = Math::Abs(deltaMs);
+            
+            uint seconds = absMs / 1000;
+            uint minutes = seconds / 60;
+            
+            uint ms = absMs % 1000;
+            seconds = seconds % 60;
+            
+            string minStr = minutes < 10 ? "0" + minutes : "" + minutes;
+            string secStr = seconds < 10 ? "0" + seconds : "" + seconds;
+            string msStr = ms < 10 ? "00" + ms : (ms < 100 ? "0" + ms : "" + ms);
+            
+            return sign + minStr + ":" + secStr + "." + msStr;
+        }
+
+        /**
+         * Load best splits from file for the current map
+         * 
+         * @method LoadBestSplits
+         * @param {string} mapId - The map ID to load splits for
+         * @private
+         */
+        private void LoadBestSplits(const string &in mapId) {
+            // Load best splits from file
+            string filePath = IO::FromStorageFolder("Splits/" + mapId + ".json");
+            
+            if (IO::FileExists(filePath)) {
+                try {
+                    IO::File file(filePath, IO::FileMode::Read);
+                    string content = file.ReadToEnd();
+                    file.Close();
+                    
+                    // Parse JSON and extract splits
+                    ParseBestSplits(content);
+                } catch {
+                    // If loading fails, use empty array
+                    for (uint i = 0; i < bestSplits.Length; i++) {
+                        bestSplits[i] = 0;
+                    }
+                }
+            } else {
+                // No best splits file exists
+                for (uint i = 0; i < bestSplits.Length; i++) {
+                    bestSplits[i] = 0;
+                }
+            }
+        }
+
+        /**
+         * Parse best splits from JSON content
+         * 
+         * Simple JSON parsing for splits array. In practice, you'd use a proper JSON library.
+         * 
+         * @method ParseBestSplits
+         * @param {string} content - JSON content to parse
+         * @private
+         */
+        private void ParseBestSplits(const string &in content) {
+            // Simple JSON parsing for splits array
+            array<string> parts = content.Split(",");
+            for (uint i = 0; i < parts.Length && i < bestSplits.Length; i++) {
+                bestSplits[i] = Text::ParseUInt(parts[i]);
+            }
+        }
+
+        /**
+         * Save best splits to file for the current map
+         * 
+         * Only saves if the race is finished. Compares with existing best time
+         * and updates if this is a new personal best.
+         * 
+         * @method SaveBestSplits
+         * @param {string} mapId - The map ID to save splits for
+         * @private
+         */
+        private void SaveBestSplits(const string &in mapId) {
+            if (currentCheckpoint != totalCheckpoints) return; // Only save if race is finished
+            
+            // Get final checkpoint times from MLFeedRaceData
+            auto raceData = MLFeed::GetRaceData_V4();
+            if (raceData is null) return;
+            
+            auto localPlayer = raceData.LocalPlayer;
+            if (localPlayer is null) return;
+            
+            // Store current run as last run for comparison
+            lastRunSplits.Resize(localPlayer.cpTimes.Length);
+            for (uint i = 0; i < localPlayer.cpTimes.Length; i++) {
+                lastRunSplits[i] = localPlayer.cpTimes[i];
+            }
+            
+            // Check if this is a new best time
+            bool isNewBest = false;
+            if (bestSplits.Length <= uint(totalCheckpoints) || localPlayer.cpTimes[uint(totalCheckpoints)] < bestSplits[uint(totalCheckpoints)]) {
+                isNewBest = true;
+                // Update best splits
+                bestSplits.Resize(localPlayer.cpTimes.Length);
+                for (uint i = 0; i < localPlayer.cpTimes.Length; i++) {
+                    bestSplits[i] = localPlayer.cpTimes[i];
+                }
+            }
+            
+            string filePath = IO::FromStorageFolder("Splits/" + mapId + ".json");
+            
+            // Create the Splits folder if it doesn't exist
+            if (!IO::FolderExists(IO::FromStorageFolder("Splits/"))) IO::CreateFolder(IO::FromStorageFolder("Splits/"), true);
+            
+        
+            // Build JSON content using MLFeedRaceData's checkpoint times
+            string content = "[";
+            for (uint i = 0; i <= uint(totalCheckpoints) && i < localPlayer.cpTimes.Length; i++) {
+                if (i > 0) content += ",";
+                content += "" + localPlayer.cpTimes[i];
+            }
+            content += "]";
+            
+            // Save to file
+            IO::File file(filePath, IO::FileMode::Write);
+            file.Write(content);
+            file.Close();
+            
+            if (isNewBest) print("New best time saved!");
+        }
+
+        /**
+         * Main render method for the overlay
+         * 
+         * Renders the prediction overlay if conditions are met.
+         * 
+         * @method Render
+         */
+        void Render() {
+            if (!isInGame || !hasStarted) return;
+            if (!fontLoaded) return;
+            
+            vec2 screenSize = vec2(Draw::GetWidth(), Draw::GetHeight());
+            // Initialize overlay position and size from settings once per session (persist across restarts)
+            if (!overlayInitialized) {
+                // Initialize position from normalized settings
+                overlayPosition.x = Math::Clamp(overlayX * screenSize.x, 0.0f, screenSize.x - overlaySize.x);
+                overlayPosition.y = Math::Clamp(overlayY * screenSize.y, 0.0f, screenSize.y - overlaySize.y);
+                
+                // Initialize size from normalized settings
+                overlaySize.x = Math::Clamp(overlayWidth * screenSize.x, 200.0f, screenSize.x);
+                overlaySize.y = Math::Clamp(overlayHeight * screenSize.y, 100.0f, screenSize.y);
+                
+                // Ensure position is still valid with new size
+                overlayPosition.x = Math::Clamp(overlayPosition.x, 0.0f, screenSize.x - overlaySize.x);
+                overlayPosition.y = Math::Clamp(overlayPosition.y, 0.0f, screenSize.y - overlaySize.y);
+                
+                overlayInitialized = true;
+            }
+            
+            // Render main overlay if enabled
+            if (showOverlay) RenderMoveableOverlay(screenSize);
+            
+        }
+        
+        /**
+         * Draw text with shadow effect
+         * 
+         * @method DrawTextWithShadow
+         * @param {vec2} position - Position to draw text at
+         * @param {string} text - Text to draw
+         * @param {vec4} textColor - Color of the main text
+         * @param {vec4} shadowColor - Color of the shadow
+         * @param {float} fontSize - Size of the font
+         * @private
+         */
+        private void DrawTextWithShadow(vec2 position, const string &in text, vec4 textColor, vec4 shadowColor, float fontSize) {
+            // Draw shadow
+            nvg::FontSize(fontSize);
+            nvg::FillColor(shadowColor);
+            nvg::TextBox(position.x + 2, position.y + 2, overlaySize.x * 0.8f, text);
+            
+            // Draw main text
+            nvg::FillColor(textColor);
+            nvg::TextBox(position.x, position.y, overlaySize.x * 0.8f, text);
+        }
+        
+        /**
+         * Render the moveable and resizable overlay
+         * 
+         * Handles mouse interaction for dragging and resizing the overlay window.
+         * Also renders the background, resize handles, and text content.
+         * 
+         * @method RenderMoveableOverlay
+         * @param {vec2} screenSize - Current screen dimensions
+         * @private
+         */
+        private void RenderMoveableOverlay(vec2 screenSize) {
+            // Get mouse input state
+            vec2 mousePos = UI::GetMousePos();
+            bool mousePressed = UI::IsMouseDown(UI::MouseButton::Left);
+            bool mouseClicked = UI::IsMouseClicked(UI::MouseButton::Left);
+            
+            // Check if mouse is over the overlay area
+            bool mouseOverOverlay = (mousePos.x >= overlayPosition.x && 
+                                   mousePos.x <= overlayPosition.x + overlaySize.x &&
+                                   mousePos.y >= overlayPosition.y && 
+                                   mousePos.y <= overlayPosition.y + overlaySize.y);
+            
+            // Determine resize edge (only when resize/drag is enabled)
+            int newResizeEdge = 0;
+            if (enableResizeDrag && mouseOverOverlay) {
+                float edgeSize = 8.0f;
+                bool leftEdge = mousePos.x <= overlayPosition.x + edgeSize;
+                bool rightEdge = mousePos.x >= overlayPosition.x + overlaySize.x - edgeSize;
+                bool topEdge = mousePos.y <= overlayPosition.y + edgeSize;
+                bool bottomEdge = mousePos.y >= overlayPosition.y + overlaySize.y - edgeSize;
+                
+                if (leftEdge) newResizeEdge = 1; // left
+                else if (rightEdge) newResizeEdge = 2; // right
+                else if (topEdge) newResizeEdge = 3; // top
+                else if (bottomEdge) newResizeEdge = 4; // bottom
+            }
+            
+            // Set cursor based on interaction state
+            if (enableResizeDrag) {
+                if (newResizeEdge > 0) {
+                    if (newResizeEdge == 1 || newResizeEdge == 2) UI::SetMouseCursor(UI::MouseCursor::ResizeEW); 
+                    else if (newResizeEdge == 3 || newResizeEdge == 4) UI::SetMouseCursor(UI::MouseCursor::ResizeNS);
+                } else if (mouseOverOverlay) {
+                    UI::SetMouseCursor(UI::MouseCursor::Hand);
+                } else {
+                    UI::SetMouseCursor(UI::MouseCursor::Arrow);
+                }
+            } else {
+                UI::SetMouseCursor(UI::MouseCursor::Arrow);
+            }
+            
+            // Handle drag start (only when resize/drag is enabled)
+            if (enableResizeDrag && mouseClicked && mouseOverOverlay && newResizeEdge == 0 && !isDraggingOverlay && !isResizingOverlay) {
+                isDraggingOverlay = true;
+                dragOffset = mousePos - overlayPosition;
+            }
+            
+            // Handle resize start (only when resize/drag is enabled)
+            if (enableResizeDrag && mouseClicked && newResizeEdge > 0 && !isDraggingOverlay && !isResizingOverlay) {
+                isResizingOverlay = true;
+                resizeEdge = newResizeEdge;
+            }
+            
+            // Handle dragging (only when resize/drag is enabled)
+            if (enableResizeDrag && isDraggingOverlay && mousePressed) {
+                overlayPosition = mousePos - dragOffset;
+                // Clamp to screen bounds
+                overlayPosition.x = Math::Clamp(overlayPosition.x, 0, screenSize.x - overlaySize.x);
+                overlayPosition.y = Math::Clamp(overlayPosition.y, 0, screenSize.y - overlaySize.y);
+            } else {
+                // Drag ended, persist normalized position to settings so it survives restarts
+                if (isDraggingOverlay) {
+                    overlayX = Math::Clamp(overlayPosition.x / screenSize.x, 0.0f, 1.0f);
+                    overlayY = Math::Clamp(overlayPosition.y / screenSize.y, 0.0f, 1.0f);
+                }
+                isDraggingOverlay = false;
+            }
+            
+            // Handle resizing (only when resize/drag is enabled)
+            if (enableResizeDrag && isResizingOverlay && mousePressed) {
+                switch (resizeEdge) {
+                    case 1: { // left
+                        float newWidth = overlayPosition.x + overlaySize.x - mousePos.x;
+                        if (newWidth >= 200.0f) {
+                            overlaySize.x = newWidth;
+                            overlayPosition.x = mousePos.x;
+                        }
+                        break;
+                    }
+                    case 2: { // right
+                        float newWidth2 = mousePos.x - overlayPosition.x;
+                        if (newWidth2 >= 200.0f) {
+                            overlaySize.x = newWidth2;
+                        }
+                        break;
+                    }
+                    case 3: { // top
+                        float newHeight = overlayPosition.y + overlaySize.y - mousePos.y;
+                        if (newHeight >= 100.0f) {
+                            overlaySize.y = newHeight;
+                            overlayPosition.y = mousePos.y;
+                        }
+                        break;
+                    }
+                    case 4: { // bottom
+                        float newHeight2 = mousePos.y - overlayPosition.y;
+                        if (newHeight2 >= 100.0f) {
+                            overlaySize.y = newHeight2;
+                        }
+                        break;
+                    }
+                }
+                
+                // Clamp to screen bounds
+                overlayPosition.x = Math::Clamp(overlayPosition.x, 0, screenSize.x - overlaySize.x);
+                overlayPosition.y = Math::Clamp(overlayPosition.y, 0, screenSize.y - overlaySize.y);
+                overlaySize.x = Math::Clamp(overlaySize.x, 200, screenSize.x - overlayPosition.x);
+                overlaySize.y = Math::Clamp(overlaySize.y, 100, screenSize.y - overlayPosition.y);
+            } else {
+                // Resize ended, persist normalized size to settings so it survives restarts
+                if (isResizingOverlay) {
+                    overlayWidth = Math::Clamp(overlaySize.x / screenSize.x, 0.1f, 1.0f);
+                    overlayHeight = Math::Clamp(overlaySize.y / screenSize.y, 0.1f, 1.0f);
+                }
+                isResizingOverlay = false;
+                resizeEdge = 0;
+            }
+            
+            // Render the overlay content
+            vec2 position = overlayPosition + overlaySize * 0.5f;
+            
+            nvg::FontSize(fontSize);
+            nvg::FontFace(font);
+            nvg::TextAlign(nvg::Align::Center | nvg::Align::Middle);
+            
+            // Draw background (show when enabled OR when drag/resize is enabled)
+            if (showBackground || enableResizeDrag) {
+                nvg::FillColor(backgroundColor);
+                nvg::BeginPath();
+                nvg::RoundedRect(overlayPosition.x, overlayPosition.y, overlaySize.x, overlaySize.y, 8);
+                nvg::Fill();
+            }
+            
+            // Draw resize edge highlights (only when resize/drag is enabled)
+            if (enableResizeDrag && newResizeEdge > 0) {
+                nvg::FillColor(vec4(0.2, 0.5, 1.0, 0.6)); // Blue with transparency
+                nvg::BeginPath();
+                
+                switch (newResizeEdge) {
+                    case 1: // left edge
+                        nvg::Rect(overlayPosition.x, overlayPosition.y, 8, overlaySize.y);
+                        break;
+                    case 2: // right edge
+                        nvg::Rect(overlayPosition.x + overlaySize.x - 8, overlayPosition.y, 8, overlaySize.y);
+                        break;
+                    case 3: // top edge
+                        nvg::Rect(overlayPosition.x, overlayPosition.y, overlaySize.x, 8);
+                        break;
+                    case 4: // bottom edge
+                        nvg::Rect(overlayPosition.x, overlayPosition.y + overlaySize.y - 8, overlaySize.x, 8);
+                        break;
+                }
+                nvg::Fill();
+            }
+            
+            // Calculate vertical positioning based on enabled elements
+            float currentY = position.y;
+            
+            // Adjust position based on what elements are shown
+            if (showDeltaTime && deltaTimeString != "+00:00.000") currentY -= fontSize * 0.4; // Move up to make room for delta time below
+            
+            if (showCheckpointSplits && currentCheckpoint > 0) currentY -= fontSize * 0.2; // Move up slightly more for checkpoint info
+            
+            
+            // Draw prediction text with shadow
+            DrawTextWithShadow(vec2(position.x - overlaySize.x * 0.4f, currentY), predictedTimeString, textColor, textShadowColor, fontSize);
+            
+            // Draw delta time if enabled
+            if (showDeltaTime && deltaTimeString != "+00:00.000") {
+                vec4 deltaColor = deltaTextColor;
+
+                if (deltaTimeString.StartsWith("+")) deltaColor = vec4(0.2, 1.0, 0.2, deltaTextColor.w); // Green for positive 
+                else deltaColor = vec4(1.0, 0.2, 0.2, deltaTextColor.w); // Red for negative
+                
+                
+                float deltaY = currentY + fontSize + 10;
+                DrawTextWithShadow(vec2(position.x - overlaySize.x * 0.4f, deltaY), deltaTimeString, deltaColor, deltaShadowColor, fontSize * 0.8f);
+            }
+            
+            // Draw checkpoint splits if enabled
+            if (showCheckpointSplits && currentCheckpoint > 0) {
+                string splitsText = "CP: " + currentCheckpoint + "/" + totalCheckpoints;
+                
+                float checkpointY = currentY + fontSize + 10;
+                if (showDeltaTime && deltaTimeString != "+00:00.000") checkpointY += fontSize * 0.8 + 10; // Add space for delta time
+                
+                
+                DrawTextWithShadow(vec2(position.x - overlaySize.x * 0.4f, checkpointY), splitsText, checkpointTextColor, checkpointShadowColor, fontSize * 0.6f);
+            }
+        }
+        
+        /**
+         * Render the settings interface
+         * 
+         * Creates a tabbed interface with General and Data tabs for configuring
+         * the predictor settings and editing split times.
+         * 
+         * @method RenderInterface
+         */
+        void RenderInterface() {
+            // Settings interface with tabs
+            UI::Text("Predictor Settings");
+            UI::Separator();
+            
+            // Tab buttons
+            if (UI::Button("General")) settingsTab = 0;
+            
+            UI::SameLine();
+            if (UI::Button("Data")) settingsTab = 1;
+            
+            
+            UI::Separator();
+            
+            // Render appropriate tab content
+            if (settingsTab == 0) RenderGeneralSettings();
+            else if (settingsTab == 1) RenderDataTab();
+            
+        }
+        
+        /**
+         * Render the General settings tab
+         * 
+         * Provides controls for overlay visibility, colors, prediction methods,
+         * and other general configuration options.
+         * 
+         * @method RenderGeneralSettings
+         * @private
+         */
+        private void RenderGeneralSettings() {
+            // Display settings
+            showOverlay = UI::Checkbox("Show Overlay", showOverlay);
+            hideWithInterface = UI::Checkbox("Hide with Interface", hideWithInterface);
+            enableResizeDrag = UI::Checkbox("Enable Resize/Drag", enableResizeDrag);
+            showBackground = UI::Checkbox("Show Background", showBackground);
+            showDeltaTime = UI::Checkbox("Show Delta Time", showDeltaTime);
+            showCheckpointSplits = UI::Checkbox("Show Checkpoint Splits", showCheckpointSplits);
+            
+            UI::Separator();
+            
+            // Position and size settings
+            overlayX = UI::SliderFloat("X Position", overlayX, 0.0, 1.0);
+            overlayY = UI::SliderFloat("Y Position", overlayY, 0.0, 1.0);
+            overlayWidth = UI::SliderFloat("Overlay Width", overlayWidth, 0.1, 1.0);
+            overlayHeight = UI::SliderFloat("Overlay Height", overlayHeight, 0.1, 1.0);
+            fontSize = UI::SliderInt("Font Size", fontSize, 12, 48);
+            
+            UI::Separator();
+            
+            // Color settings
+            UI::Text("Colors:");
+            textColor = UI::InputColor4("Text Color", textColor);
+            textShadowColor = UI::InputColor4("Text Shadow Color", textShadowColor);
+            backgroundColor = UI::InputColor4("Background Color", backgroundColor);
+            
+            UI::Separator();
+            
+            // Delta time colors
+            UI::Text("Delta Time Colors:");
+            deltaTextColor = UI::InputColor4("Delta Text Color", deltaTextColor);
+            deltaShadowColor = UI::InputColor4("Delta Shadow Color", deltaShadowColor);
+            
+            UI::Separator();
+            
+            // Checkpoint colors
+            UI::Text("Checkpoint Colors:");
+            checkpointTextColor = UI::InputColor4("Checkpoint Text Color", checkpointTextColor);
+            checkpointShadowColor = UI::InputColor4("Checkpoint Shadow Color", checkpointShadowColor);
+            
+            UI::Separator();
+            
+            // Prediction method selection
+            UI::Text("Prediction Method:");
+            UI::Text("Select one method for time prediction:");
+            
+            // Linear Extrapolation
+            bool linearSelected = (predictionMethod == PredictorMethod::LinearExtrapolation);
+            if (UI::Checkbox("Linear Extrapolation", linearSelected)) predictionMethod = PredictorMethod::LinearExtrapolation;
+            
+            UI::Text("  • Basic prediction based on average time per checkpoint");
+            UI::Text("  • Not very accurate - assumes constant pace throughout race");
+            UI::Text("  • Works immediately without previous runs");
+            
+            UI::Separator();
+            
+            // Best Splits Comparison
+            bool bestSplitsSelected = (predictionMethod == PredictorMethod::BestSplitsComparison);
+            if (UI::Checkbox("Best Splits Comparison", bestSplitsSelected)) predictionMethod = PredictorMethod::BestSplitsComparison;
+            
+            UI::Text("  • Uses your personal best checkpoint times for prediction");
+            UI::Text("  • Most accurate method when you have previous runs");
+            UI::Text("  • IMPORTANT: You need to finish a run first to save best splits");
+            UI::Text("  • Falls back to Linear Extrapolation if no best splits available");
+            
+            UI::Separator();
+            
+            // Hybrid
+            bool hybridSelected = (predictionMethod == PredictorMethod::Hybrid);
+            if (UI::Checkbox("Hybrid Method", hybridSelected)) predictionMethod = PredictorMethod::Hybrid;
+            
+            UI::Text("  • Combines Linear Extrapolation and Best Splits Comparison");
+            UI::Text("  • Uses 70% Best Splits + 30% Linear Extrapolation weighting");
+            UI::Text("  • Will use the inaccurate Linear prediction if map not finished before");
+            UI::Text("  • Provides balanced accuracy between methods");
+        }
+        
+        /**
+         * Render the Data tab for manual split editing
+         * 
+         * Provides interface for manually editing checkpoint times and
+         * managing best splits data for the current map.
+         * 
+         * @method RenderDataTab
+         * @private
+         */
+        private void RenderDataTab() {
+            UI::Text("Manual Split Data Editor");
+            UI::Text("Edit checkpoint times manually for the current map");
+            
+            if (totalCheckpoints == 0) {
+                UI::Text("No map loaded. Start a race to see checkpoint data.");
+                return;
+            }
+            
+            UI::Separator();
+            
+            // Initialize editable splits if needed
+            if (editableSplits.Length != uint(totalCheckpoints + 1)) {
+                editableSplits.Resize(uint(totalCheckpoints + 1));
+                for (uint i = 0; i <= totalCheckpoints; i++) {
+                    if (i < bestSplits.Length) editableSplits[i] = FormatTime(bestSplits[i]);
+                    else editableSplits[i] = "00:00.000"; 
+                }
+            }
+            
+            // Show editable checkpoint times
+            UI::Text("Checkpoint Times (Cumulative):");
+            
+            bool dataChanged = false;
+            
+            for (uint i = 1; i <= totalCheckpoints; i++) {
+                string cpLabel = (i == totalCheckpoints) ? "Finish:" : ("CP " + i + ":");
+                UI::Text(cpLabel);
+                UI::SameLine();
+                
+                if (i == totalCheckpoints) {
+                    // Finish time is read-only (auto-calculated)
+                    UI::Text(editableSplits[i]);
+                } else {
+                    string oldTime = editableSplits[i];
+                    string newTime = UI::InputText("##cp" + i, editableSplits[i]);
+                    if (newTime != editableSplits[i]) {
+                        editableSplits[i] = newTime;
+                        dataChanged = true;
+                        // Update all subsequent checkpoint times to maintain cumulative nature
+                        UpdateSubsequentCheckpoints(i, oldTime, newTime);
+                    }
+                }
+            }
+            
+            UI::Separator();
+            
+            // Show total time (read-only, auto-calculated)
+            UI::Text("Total Time (Auto-calculated):");
+            UI::SameLine();
+            UI::Text(editableSplits[totalCheckpoints]);
+            
+            UI::Separator();
+            
+            // Action buttons
+            if (UI::Button("Save Changes")) SaveManualSplits();
+            
+            UI::SameLine();
+            
+            if (UI::Button("Reset to Best Splits")) ResetToBestSplits();
+            
+            UI::SameLine();
+            
+            if (UI::Button("Clear All")) ClearAllSplits();  
+        }
+        
+        /**
+         * Save manually edited splits to file
+         * 
+         * Converts string times back to uint values and updates the best splits.
+         * 
+         * @method SaveManualSplits
+         * @private
+         */
+        private void SaveManualSplits() {
+            if (editableSplits.Length <= totalCheckpoints) return;
+            
+            // Convert string times back to uint and update bestSplits
+            bestSplits.Resize(editableSplits.Length);
+            
+            for (uint i = 0; i < editableSplits.Length; i++) {
+                uint timeMs = ParseTimeString(editableSplits[i]);
+                bestSplits[i] = timeMs;
+            }
+            
+            // Save to file
+            if (currentMapId != "") {
+                SaveBestSplits(currentMapId);
+                print("Manual splits saved for map: " + currentMapId);
+            }
+        }
+        
+        /**
+         * Reset editable splits to current best splits
+         * 
+         * @method ResetToBestSplits
+         * @private
+         */
+        private void ResetToBestSplits() {
+            if (bestSplits.Length <= totalCheckpoints) return;
+            
+            // Reset editable splits to current best splits
+            editableSplits.Resize(totalCheckpoints + 1);
+            for (uint i = 0; i <= totalCheckpoints && i < bestSplits.Length; i++) {
+                editableSplits[i] = FormatTime(bestSplits[i]);
+            }
+        }
+        
+        /**
+         * Clear all editable splits
+         * 
+         * @method ClearAllSplits
+         * @private
+         */
+        private void ClearAllSplits() {
+            // Clear all editable splits
+            editableSplits.Resize(totalCheckpoints + 1);
+            for (uint i = 0; i <= totalCheckpoints; i++) {
+                editableSplits[i] = "00:00.000";
+            }
+        }
+        
+        /**
+         * Parse time string in MM:SS.mmm format to milliseconds
+         * 
+         * @method ParseTimeString
+         * @param {string} timeStr - Time string to parse
+         * @returns {uint} Time in milliseconds
+         * @private
+         */
+        private uint ParseTimeString(const string &in timeStr) {
+            // Parse time string in format "MM:SS.mmm" to milliseconds
+            array<string> parts = timeStr.Split(":");
+            if (parts.Length != 2) return 0;
+            
+            uint minutes = Text::ParseUInt(parts[0]);
+            
+            array<string> secondsParts = parts[1].Split(".");
+            if (secondsParts.Length != 2) return 0;
+            
+            uint seconds = Text::ParseUInt(secondsParts[0]);
+            uint milliseconds = Text::ParseUInt(secondsParts[1]);
+            
+            return (minutes * 60 + seconds) * 1000 + milliseconds;
+        }
+        
+        /**
+         * Update subsequent checkpoints when a split time is manually changed
+         * 
+         * Maintains the cumulative nature of checkpoint times by updating
+         * all subsequent checkpoints by the same time difference.
+         * 
+         * @method UpdateSubsequentCheckpoints
+         * @param {uint} changedIndex - Index of the checkpoint that was changed
+         * @param {string} oldTime - Previous time value
+         * @param {string} newTime - New time value
+         * @private
+         */
+        private void UpdateSubsequentCheckpoints(uint changedIndex, const string &in oldTime, const string &in newTime) {
+            // When a checkpoint time changes, update all subsequent checkpoints
+            // to maintain the cumulative nature of the times
+            
+            uint oldTimeMs = ParseTimeString(oldTime);
+            uint newTimeMs = ParseTimeString(newTime);
+            
+            // Calculate the time difference
+            int timeDiff = int(newTimeMs) - int(oldTimeMs);
+            
+            // Update all checkpoints after the changed one by the same amount
+            for (uint i = changedIndex + 1; i <= totalCheckpoints; i++) {
+                if (i < editableSplits.Length) {
+                    uint currentTimeMs = ParseTimeString(editableSplits[i]);
+                    uint updatedTimeMs = currentTimeMs + uint(timeDiff);
+                    editableSplits[i] = FormatTime(updatedTimeMs);
+                }
+            }
+        }
+        
+        /**
+         * Render menu items for the plugin
+         * 
+         * @method RenderMenu
+         */
+        void RenderMenu() {
+            if (UI::MenuItem("Settings", "", false)) {
+                // Toggle settings window
+            }
+            UI::Separator();
+            if (UI::MenuItem("Reset Splits for Current Map", "", false)) {
+                // Reset splits for current map
+            }
+        }
+    }
+
+    // ============================================================================
+    // DID SUPPORT FUNCTIONS
+    // ============================================================================
+    
+    /**
+     * Get the current predicted time string for DID integration
+     * 
+     * @function GetPredictedTimeString
+     * @returns {string} Current predicted time string
+     */
+    string GetPredictedTimeString() {
+        if (predictorCore !is null) return predictorCore.PredictedTimeString;
+        
+        return "00:00.000";
+    }
+
+    /**
+     * Get the current delta time string for DID integration
+     * 
+     * @function GetDeltaTimeString
+     * @returns {string} Current delta time string
+     */
+    string GetDeltaTimeString() {
+        if (predictorCore !is null) return predictorCore.DeltaTimeString;
+        
+        return "+00:00.000";
+    }
+
+    /**
+     * Get the current checkpoint info string for DID integration
+     * 
+     * @function GetCheckpointInfoString
+     * @returns {string} Current checkpoint information string
+     */
+    string GetCheckpointInfoString() {
+        if (predictorCore !is null) return "CP: " + predictorCore.CurrentCheckpoint + "/" + predictorCore.TotalCheckpoints;
+        
+        return "CP: 0/0";
+    }
 }

@@ -1,17 +1,17 @@
 {
 	"name": "tmnext-predictor",
-	"version": "2.1.0",
+	"version": "3.0.0",
 	"description": "",
-	"main": "Build_Plugin.ts",
+	"main": "build.ts",
 	"scripts": {
-		"build": "ts-node ./Build_Plugin"
+		"build": "bun run build.ts"
 	},
 	"author": "JackNytely",
 	"license": "ISC",
 	"devDependencies": {
-		"ts-node": "^10.9.1"
+		"@types/node": "^24.9.1",
+		"rimraf": "^6.0.1",
+		"zip-a-folder": "^3.1.9"
 	},
-	"dependencies": {
-		"zip-a-folder": "^2.0.0"
-	}
+	"dependencies": {}
 }
