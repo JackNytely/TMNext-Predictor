@@ -16,7 +16,7 @@ jobs:
     # Setup the Workflow Job for the build
     build:
         # Setup the Server to Run the Job
-        runs-on: [contabo]
+        runs-on: contabo
 
         # Setup the Workflow Steps to Run the Job
         steps:
