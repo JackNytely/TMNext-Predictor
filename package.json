@@ -2,16 +2,28 @@
 	"name": "tmnext-predictor",
 	"version": "3.0.0",
 	"description": "",
-	"main": "build.ts",
+	"main": "server-src/main.ts",
 	"scripts": {
-		"build": "bun run build.ts"
+		"build:plugin": "bun run build-plugin.ts",
+		"build:server": "bun bun.build.js",
+		"dev": "bun run server-src/main.ts",
+		"start": "bun run dist/main.js"
 	},
+	"keywords": [
+		"trackmania",
+		"openplanet",
+		"predictor"
+	],
 	"author": "JackNytely",
-	"license": "ISC",
+	"license": "MIT",
+	"dependencies": {
+		"@fastify/cors": "^11.1.0",
+		"fastify": "^5.6.1",
+		"mongoose": "^8.19.2"
+	},
 	"devDependencies": {
 		"@types/node": "^24.9.1",
 		"rimraf": "^6.0.1",
 		"zip-a-folder": "^3.1.9"
-	},
-	"dependencies": {}
+	}
 }

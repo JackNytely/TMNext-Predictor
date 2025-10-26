@@ -1,0 +1,70 @@
+# Setup the Workflow Name
+name: TMNext Predictor Server
+
+# Setup the Workflow Events
+on:
+    # Setup the Workflow Events for the push
+    push:
+        branches:
+            - master
+
+    # Allows you to run this workflow manually from the Actions tab
+    workflow_dispatch:
+
+# Setup the Workflow Jobs
+jobs:
+    # Setup the Workflow Job for the build
+    build:
+        # Setup the Server to Run the Job
+        runs-on: [contabo]
+
+        # Setup the Workflow Steps to Run the Job
+        steps:
+            # Checkout the Repository and Setup the Bun Environment
+            - uses: actions/checkout@v4
+            - uses: oven-sh/setup-bun@v2
+
+            # Setup the Environment File
+            - name: Setup Environment File
+              run: |
+                  cp ~/node_projects/tmnext-predictor/main.env .env
+
+            # Install Required Modules
+            - name: Install Required Modules
+              run: |
+                  bun install
+
+            # Build the Server
+            - name: Build the Server
+              run: |
+                  bun run build:server
+
+            # Stop the App
+            - name: Stop the App
+              run: |
+                  pm2 stop "TMNext Predictor Server"
+
+            # Clear Existing Files in Destination
+            - name: Clear Existing Files in Destination
+              run: |
+                  if [ -d "~/node_projects/tmnext-predictor/server-files" ]; then
+                      rm -rf ~/node_projects/tmnext-predictor/server-files/*
+                  fi
+
+            # Copy Built Files to Destination
+            - name: Copy Built Files to Destination
+              run: |
+                  mkdir -p ~/node_projects/tmnext-predictor/server-files
+                  cp -r dist ~/node_projects/tmnext-predictor/server-files/
+                  cp -r node_modules ~/node_projects/tmnext-predictor/server-files/
+                  cp package.json ~/node_projects/tmnext-predictor/server-files/
+                  cp bun.lock ~/node_projects/tmnext-predictor/server-files/
+                  cp .env ~/node_projects/tmnext-predictor/server-files/
+
+            # Restart the App
+            - name: Restart App
+              run: |
+                  pm2 reset "TMNext Predictor Server"
+                  pm2 start "TMNext Predictor Server"
+
+#PM2 START COMMAND: pm2 start bun --name "TMNext Predictor Server" -- run start

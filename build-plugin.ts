@@ -9,7 +9,7 @@ console.log('-=+=- Building the Plugin');
 
 //Constants
 const openplanetPluginsDirectory = `${homedir()}/openplanetnext/Plugins`;
-const sourceDirectory = `${process.cwd()}/src`;
+const sourceDirectory = `${process.cwd()}/plugin-src`;
 
 //Check if the Openplanet Plugins Folder does not exist
 if (!existsSync(openplanetPluginsDirectory)) throw new Error(`Can not Find Openplanet Plugins at -- ${openplanetPluginsDirectory}`);
