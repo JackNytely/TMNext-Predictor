@@ -50,6 +50,12 @@ export async function getPlayerSplits(accountId: string, mapId: string): Promise
 	return splits;
 }
 
+/**
+ * Get the best split for a player
+ * @param accountId The account ID of the player
+ * @param mapId The ID of the map
+ * @returns The best split for the player
+ */
 export async function getPlayerBestSplit(accountId: string, mapId: string): Promise<TMNextSplit | null> {
 	// Find the Map
 	const map = await findOrCreateMap(mapId);
@@ -61,5 +67,21 @@ export async function getPlayerBestSplit(accountId: string, mapId: string): Prom
 		.sort({ totalTime: 1 });
 
 	// Return the splits
+	return split;
+}
+
+/**
+ * Get the global best split for a map
+ * @param mapId The ID of the map
+ * @returns The global best split for the map
+ */
+export async function getGlobalBestSplit(mapId: string): Promise<TMNextSplit | null> {
+	// Find the Map
+	const map = await findOrCreateMap(mapId);
+
+	// Find the global best split for the map
+	const split = await SplitModel.findOne({ mapId: map._id }).populate('playerId').populate('mapId').sort({ totalTime: 1 });
+
+	// Return the global best split
 	return split;
 }

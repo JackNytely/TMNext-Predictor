@@ -44,6 +44,10 @@ namespace Predictor {
     [Setting name="Show Background"]
     bool showBackground = true;
 
+    /** Whether the settings window is visible */
+    [Setting hidden]
+    bool showSettingsWindow = true;
+
     // ============================================================================
     // COLOR SETTINGS
     // ============================================================================
@@ -83,6 +87,14 @@ namespace Predictor {
     /** Whether to save splits to the server */
     [Setting name="Save Splits to Server"]
     bool saveToServer = false;
+    
+    /** Whether to use server splits for prediction (instead of local) */
+    [Setting name="Use Server Splits for Prediction"]
+    bool useServerSplits = false;
+    
+    /** Which type of server splits to use for prediction */
+    [Setting name="Server Split Type"]
+    SplitSourceType splitSourceType = SplitSourceType::PersonalBest;
 
     // ============================================================================
     // FUNCTIONALITY SETTINGS
@@ -122,5 +134,18 @@ namespace Predictor {
         
         /** Hybrid approach combining linear and best splits methods */
         Hybrid
+    }
+    
+    /**
+     * Source type for server splits
+     * 
+     * @enum SplitSourceType
+     */
+    enum SplitSourceType {
+        /** Use personal best split from server */
+        PersonalBest,
+        
+        /** Use global best split from server */
+        GlobalBest
     }
 }

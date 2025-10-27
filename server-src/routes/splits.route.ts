@@ -1,10 +1,10 @@
 // External Imports
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyInstance, FastifyReply } from 'fastify';
 
 // Internal Imports
-import { saveSplit } from '../services/split.service';
+import { getGlobalBestSplit, getPlayerBestSplit, getPlayerSplits, saveSplit } from '../services/split.service';
 import { authenticateRequest } from '../middleware/auth.middleware';
-import type { AuthenticatedRequest, SplitRequestBody, TMNextSplit } from '../types/types';
+import { GetSplitsType, type AuthenticatedRequest, type GetSplitsRequest, type SaveSplitRequest, type TMNextSplit } from '../types/types';
 
 /**
  * Register the Split Routes
@@ -13,7 +13,14 @@ import type { AuthenticatedRequest, SplitRequestBody, TMNextSplit } from '../typ
  */
 export async function registerSplitRoutes(fastify: FastifyInstance): Promise<void> {
 	// Save a new split
-	fastify.post('/splits', { preHandler: authenticateRequest }, splitHandler);
+	fastify.post('/splits/save', { preHandler: authenticateRequest }, (request: AuthenticatedRequest, reply: FastifyReply) =>
+		saveSplitHandler(request as SaveSplitRequest, reply),
+	);
+
+	// Handles Split Fetching
+	fastify.post('/splits/get', { preHandler: authenticateRequest }, (request: AuthenticatedRequest, reply: FastifyReply) =>
+		getSplitsHandler(request as GetSplitsRequest, reply),
+	);
 }
 
 /**
@@ -22,16 +29,13 @@ export async function registerSplitRoutes(fastify: FastifyInstance): Promise<voi
  * @param reply The Fastify reply
  * @returns The response
  */
-async function splitHandler(request: AuthenticatedRequest, reply: FastifyReply) {
+async function saveSplitHandler(request: SaveSplitRequest, reply: FastifyReply) {
 	// Get the user ID and display name
 	const userId = request.userId!;
 	const displayName = request.displayName!;
 
-	// Get the body from the request
-	const body: SplitRequestBody = request.body;
-
 	// Get the map ID, checkpoint times, total time and run date from the body
-	const { mapId, checkpointTimes, totalTime, runDate } = body;
+	const { mapId, checkpointTimes, totalTime, runDate } = request.body;
 
 	// Check if the Map ID Is missing
 	if (!mapId) return reply.code(400).send({ error: 'mapId is required' });
@@ -79,4 +83,57 @@ async function splitHandler(request: AuthenticatedRequest, reply: FastifyReply) 
 
 	// Return the response
 	return reply.code(201).send({ success: true, data: responseData });
+}
+
+/**
+ * Get Splits Handler
+ * @param request The authenticated request
+ * @param reply The Fastify reply
+ * @returns The response
+ */
+async function getSplitsHandler(request: GetSplitsRequest, reply: FastifyReply) {
+	// Get the user ID and display name
+	const userId = request.userId!;
+
+	// Get the map ID, checkpoint times, total time and run date from the body
+	const { mapId, type } = request.body;
+
+	// Check if the Map ID Is missing
+	if (!mapId) return reply.code(400).send({ error: 'mapId is required' });
+
+	// Check if the Type Is missing
+	if (!type) return reply.code(400).send({ error: 'type is required' });
+
+	// Setup the Splits Array
+	const splits: Array<TMNextSplit> = new Array();
+
+	// Check if the Type Is All
+	if (type === GetSplitsType.ALL) {
+		// Get the player splits
+		const playerSplits = await getPlayerSplits(userId, mapId);
+
+		// Check if the Player Splits Is not null and add it to the splits array
+		if (playerSplits) splits.push(...playerSplits);
+	}
+
+	// Check if the Type Is Global Best
+	if (type === GetSplitsType.GLOBAL_BEST) {
+		// Get the global best split
+		const globalBestSplit = await getGlobalBestSplit(mapId);
+
+		// Check if the Global Best Split Is not null and add it to the splits array
+		if (globalBestSplit) splits.push(globalBestSplit);
+	}
+
+	// Check if the Type Is Personal Best
+	if (type === GetSplitsType.PERSONAL_BEST) {
+		// Get the personal best split
+		const personalBestSplit = await getPlayerBestSplit(userId, mapId);
+
+		// Check if the Personal Best Split Is not null and add it to the splits array
+		if (personalBestSplit) splits.push(personalBestSplit);
+	}
+
+	// Return the response
+	return reply.code(200).send({ success: true, data: splits });
 }

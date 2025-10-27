@@ -147,6 +147,15 @@ namespace Predictor {
         
         /** Whether config has been successfully loaded */
         private bool configLoaded = false;
+        
+        /** Whether server splits are being used */
+        private bool serverSplitsEnabled = false;
+        
+        /** Array storing server-sourced best checkpoint times for current map */
+        private array<uint> serverBestSplits;
+        
+        /** Whether server splits are currently being fetched */
+        private bool fetchingServerSplits = false;
 
         /**
          * Initialize the predictor plugin
@@ -258,9 +267,24 @@ namespace Predictor {
             // Check for config fetch completion
             CheckConfigFetch();
             
-            // Update database manager to process pending saves
+            // Update database manager to process pending saves and fetches
             if (databaseManager !is null) {
-                databaseManager.Update();
+                databaseManager.UpdateAll();
+                
+                // Check if server splits fetch completed
+                if (fetchingServerSplits) {
+                    if (!databaseManager.IsFetching()) {
+                        fetchingServerSplits = false;
+                        if (databaseManager.GetFetchSuccess()) {
+                            Json::Value fetchedData = databaseManager.GetFetchedData();
+                            ParseServerSplits(fetchedData);
+                        } else {
+                            print("Server splits fetch failed: " + databaseManager.GetLastError());
+                            // Fall back to local splits
+                            LoadBestSplits(currentMapId);
+                        }
+                    }
+                }
             }
             
             // Check if we're currently in a race
@@ -385,8 +409,35 @@ namespace Predictor {
             startTime = 0;
             lastCheckpointTime = 0;
             
+            // Check if server splits should be used
+            serverSplitsEnabled = useServerSplits && configLoaded;
+            
             // Load best splits for this map
-            LoadBestSplits(mapId);
+            if (serverSplitsEnabled && databaseManager !is null && serverUrl != "") {
+                // Fetch server splits
+                string type = splitSourceType == SplitSourceType::PersonalBest ? "personalBest" : "globalBest";
+                string splitSourceName = splitSourceType == SplitSourceType::PersonalBest ? "Personal Best" : "Global Best";
+                print("Fetching " + splitSourceName + " splits from server for map: " + mapId);
+                
+                if (databaseManager.FetchSplits(mapId, serverUrl, type)) {
+                    fetchingServerSplits = true;
+                } else {
+                    print("Failed to fetch server splits: " + databaseManager.GetLastError());
+                    // Fall back to local splits
+                    print("Falling back to local splits");
+                    LoadBestSplits(mapId);
+                }
+            } else {
+                // Use local splits
+                if (!serverSplitsEnabled) {
+                    print("Using local splits (server splits disabled)");
+                } else if (databaseManager is null) {
+                    print("Database manager not initialized, using local splits");
+                } else if (serverUrl == "") {
+                    print("Server URL not configured, using local splits");
+                }
+                LoadBestSplits(mapId);
+            }
         }
 
         /**
@@ -709,6 +760,91 @@ namespace Predictor {
                 for (uint i = 0; i < bestSplits.Length; i++) {
                     bestSplits[i] = 0;
                 }
+            }
+        }
+        
+        /**
+         * Parse server splits from JSON response
+         * 
+         * @method ParseServerSplits
+         * @param {Json::Value} jsonData - JSON response from server
+         * @private
+         */
+        private void ParseServerSplits(Json::Value jsonData) {
+            try {
+                // Expected format: {"success":true,"data":[{"checkpointTimes":[...],...}]}
+                
+                // Get the data array
+                if (!jsonData.HasKey("data")) {
+                    throw("No data key found");
+                }
+                
+                if (jsonData["data"].GetType() != Json::Type::Array) {
+                    throw("data is not an array");
+                }
+                
+                Json::Value dataArray = jsonData["data"];
+                
+                // Get the first split
+                Json::Value firstSplit = dataArray[0];
+                
+                // Extract checkpoint times array
+                if (!firstSplit.HasKey("checkpointTimes")) {
+                    throw("No checkpointTimes key found");
+                }
+                
+                if (firstSplit["checkpointTimes"].GetType() != Json::Type::Array) {
+                    throw("checkpointTimes is not an array");
+                }
+                
+                Json::Value cpTimesArray = firstSplit["checkpointTimes"];
+                
+                // Extract checkpoint times from the array
+                // We'll use a reasonable maximum and check as we go
+                array<uint> tempSplits;
+                tempSplits.Resize(1000); // Reasonable maximum for checkpoints
+                
+                uint actualCount = 0;
+                try {
+                    for (uint i = 0; i < 1000; i++) {
+                        Json::Value cpTime = cpTimesArray[i];
+                        if (cpTime.GetType() == Json::Type::Number) {
+                            // Get the value as string and parse it
+                            string timeStr = string(cpTime);
+                            uint timeValue = Text::ParseUInt(timeStr);
+                            tempSplits[actualCount] = timeValue;
+                            actualCount++;
+                        } else if (cpTime.GetType() == Json::Type::Null) {
+                            break;
+                        }
+                    }
+                } catch {
+                    // Reached end of array or invalid access
+                }
+                
+                if (actualCount == 0) {
+                    throw("Empty checkpointTimes array");
+                }
+                
+                // Resize to actual count
+                serverBestSplits.Resize(actualCount);
+                for (uint i = 0; i < actualCount; i++) {
+                    serverBestSplits[i] = tempSplits[i];
+                }
+                
+                // Copy server splits to bestSplits for use in predictions
+                if (serverBestSplits.Length > 0) {
+                    bestSplits.Resize(serverBestSplits.Length);
+                    for (uint i = 0; i < serverBestSplits.Length; i++) {
+                        bestSplits[i] = serverBestSplits[i];
+                    }
+                    print("Loaded " + serverBestSplits.Length + " server splits for predictions");
+                }
+                
+            } catch {
+                print("Failed to parse server splits");
+                // Fall back to local splits
+                LoadBestSplits(currentMapId);
             }
         }
 
@@ -1095,23 +1231,34 @@ namespace Predictor {
          * @method RenderInterface
          */
         void RenderInterface() {
-            // Settings interface with tabs
-            UI::Text("Predictor Settings");
-            UI::Separator();
-            
-            // Tab buttons
-            if (UI::Button("General")) settingsTab = 0;
-            
-            UI::SameLine();
-            if (UI::Button("Data")) settingsTab = 1;
-            
-            
-            UI::Separator();
-            
-            // Render appropriate tab content
-            if (settingsTab == 0) RenderGeneralSettings();
-            else if (settingsTab == 1) RenderDataTab();
-            
+            if (!showSettingsWindow) return;
+            // Create closable settings window
+            if (UI::Begin("Predictor Settings", showSettingsWindow)) {
+                // Setup the Separator
+                UI::Separator();
+                
+                // Tab buttons
+                if (UI::Button("General")) settingsTab = 0;
+                
+                // Setup the SameLine
+                UI::SameLine();
+
+                // Setup the Button
+                if (UI::Button("Data")) settingsTab = 1;
+                
+                // Setup the Separator
+                UI::Separator();
+                
+                // Render appropriate tab content
+                if (settingsTab == 0) RenderGeneralSettings();
+
+                // Render the Data tab
+                if (settingsTab == 1) RenderDataTab();
+                
+            }
+
+            // End the window
+            UI::End();
         }
         
         /**
@@ -1124,6 +1271,9 @@ namespace Predictor {
          * @private
          */
         private void RenderGeneralSettings() {
+            // Setup the Separator
+            UI::Separator();
+            
             // Display settings
             showOverlay = UI::Checkbox("Show Overlay", showOverlay);
             hideWithInterface = UI::Checkbox("Hide with Interface", hideWithInterface);
@@ -1204,6 +1354,29 @@ namespace Predictor {
             // Database settings
             UI::Text("Database Settings:");
             saveToServer = UI::Checkbox("Save Splits to Server", saveToServer);
+            
+            UI::Separator();
+            
+            // Server split settings
+            UI::Text("Server Split Settings:");
+            useServerSplits = UI::Checkbox("Use Server Splits for Prediction", useServerSplits);
+            
+            if (useServerSplits) {
+                UI::Indent();
+                UI::Text("Split Source:");
+                
+                bool usePersonal = (splitSourceType == SplitSourceType::PersonalBest);
+                if (UI::Checkbox("Use Personal Best", usePersonal)) {
+                    splitSourceType = SplitSourceType::PersonalBest;
+                }
+                
+                bool useGlobal = (splitSourceType == SplitSourceType::GlobalBest);
+                if (UI::Checkbox("Use Global Best", useGlobal)) {
+                    splitSourceType = SplitSourceType::GlobalBest;
+                }
+                
+                UI::Unindent();
+            }
         }
         
         /**
@@ -1215,7 +1388,9 @@ namespace Predictor {
          * @method RenderDataTab
          * @private
          */
-        private void RenderDataTab() {
+        private void RenderDataTab() {   
+            UI::Separator();
+            
             UI::Text("Manual Split Data Editor");
             UI::Text("Edit checkpoint times manually for the current map");
             
@@ -1399,13 +1574,7 @@ namespace Predictor {
          * @method RenderMenu
          */
         void RenderMenu() {
-            if (UI::MenuItem("Settings", "", false)) {
-                // Toggle settings window
-            }
-            UI::Separator();
-            if (UI::MenuItem("Reset Splits for Current Map", "", false)) {
-                // Reset splits for current map
-            }
+            if (UI::MenuItem("Settings", "", showSettingsWindow)) showSettingsWindow = !showSettingsWindow;
         }
     }
 

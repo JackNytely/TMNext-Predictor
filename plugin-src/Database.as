@@ -104,6 +104,18 @@ namespace Predictor {
         /** Queue of server URLs for pending saves */
         private array<string> pendingUrls;
         
+        /** HTTP request for fetching splits from server */
+        private Net::HttpRequest@ fetchRequest = null;
+        
+        /** Whether a fetch operation is in progress */
+        private bool isFetching = false;
+        
+        /** Most recent fetched splits data */
+        private Json::Value lastFetchedData = Json::Value();
+        
+        /** Whether the last fetch was successful */
+        private bool lastFetchSuccess = false;
+        
         /**
          * Set the authentication token
          * 
@@ -214,6 +226,15 @@ namespace Predictor {
         }
         
         /**
+         * Update method to check on pending saves and fetches
+         * Should be called regularly (e.g., every frame)
+         */
+        void UpdateAll() {
+            Update();
+            UpdateFetch();
+        }
+        
+        /**
          * Get the most recent error message
          * 
          * @returns {string} The last error message
@@ -227,6 +248,129 @@ namespace Predictor {
          */
         void ClearAuthToken() {
             authToken = "";
+        }
+        
+        /**
+         * Fetch splits from the server
+         * 
+         * @param {string} mapId - The map ID to fetch splits for
+         * @param {string} serverUrl - The server URL
+         * @param {string} type - Type of splits to fetch ("personalBest" or "globalBest")
+         * @returns {bool} True if fetch was started, false otherwise
+         */
+        bool FetchSplits(const string &in mapId, const string &in serverUrl, const string &in type) {
+            if (mapId.Length == 0) {
+                lastError = "Map ID is required";
+                return false;
+            }
+            
+            if (serverUrl.Length == 0) {
+                lastError = "Server URL is required";
+                return false;
+            }
+            
+            if (authToken.Length == 0) {
+                lastError = "No authentication token set";
+                return false;
+            }
+            
+            if (isFetching) {
+                lastError = "A fetch operation is already in progress";
+                return false;
+            }
+            
+            // Start the fetch process
+            StartFetch(mapId, serverUrl, type);
+            return true;
+        }
+        
+        /**
+         * Start a fetch operation
+         * 
+         * @param {string} mapId - The map ID
+         * @param {string} serverUrl - The server URL
+         * @param {string} type - Type of splits to fetch
+         * @private
+         */
+        void StartFetch(const string &in mapId, const string &in serverUrl, const string &in type) {
+            // Construct the URL
+            string url = serverUrl;
+            if (!url.EndsWith("/")) url += "/";
+            url += "splits/get";
+            
+            // Create JSON body
+            string jsonBody = "{";
+            jsonBody += "\"mapId\":\"" + mapId + "\",";
+            jsonBody += "\"type\":\"" + type + "\"";
+            jsonBody += "}";
+            
+            // Create HTTP request
+            @fetchRequest = Net::HttpRequest();
+            fetchRequest.Method = Net::HttpMethod::Post;
+            fetchRequest.Url = url;
+            fetchRequest.Body = jsonBody;
+            fetchRequest.Headers.Set("Content-Type", "application/json");
+            fetchRequest.Headers.Set("Authorization", "Bearer " + authToken);
+            
+            // Send the request
+            fetchRequest.Start();
+            isFetching = true;
+            lastFetchSuccess = false;
+            lastFetchedData = Json::Value();
+        }
+        
+        /**
+         * Get the fetched splits data
+         * 
+         * @returns {Json::Value} The fetched splits data or empty Json::Value if not available
+         */
+        Json::Value GetFetchedData() {
+            return lastFetchedData;
+        }
+        
+        /**
+         * Check if the fetch was successful
+         * 
+         * @returns {bool} True if the last fetch was successful
+         */
+        bool GetFetchSuccess() {
+            return lastFetchSuccess;
+        }
+        
+        /**
+         * Check if a fetch is in progress
+         * 
+         * @returns {bool} True if a fetch is in progress
+         */
+        bool IsFetching() {
+            return isFetching;
+        }
+        
+        /**
+         * Update fetch operation status
+         * Should be called regularly in Update()
+         */
+        void UpdateFetch() {
+            if (isFetching && fetchRequest !is null) {
+                if (fetchRequest.Finished()) {
+                    bool success = fetchRequest.ResponseCode() >= 200 && fetchRequest.ResponseCode() < 300;
+                    if (success) {
+                        Json::Value responseBody = fetchRequest.Json();
+                        lastFetchedData = responseBody;
+                        lastFetchSuccess = true;
+                        print("Successfully fetched splits from server");
+                    } else {
+                        string responseBody = fetchRequest.String();
+                        lastError = "Server error (" + fetchRequest.ResponseCode() + "): " + responseBody;
+                        print("Failed to fetch splits from server: " + lastError);
+                        lastFetchedData = Json::Value();
+                        lastFetchSuccess = false;
+                    }
+                    
+                    isFetching = false;
+                    @fetchRequest = null;
+                }
+            }
         }
     }
     
