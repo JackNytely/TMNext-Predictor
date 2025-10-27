@@ -1,6 +1,6 @@
 //Imports
 import { homedir } from 'os';
-import { existsSync } from 'fs';
+import { cpSync, existsSync } from 'fs';
 import { zip } from 'zip-a-folder';
 import { rimraf } from 'rimraf';
 
@@ -15,10 +15,10 @@ const sourceDirectory = `${process.cwd()}/plugin-src`;
 if (!existsSync(openplanetPluginsDirectory)) throw new Error(`Can not Find Openplanet Plugins at -- ${openplanetPluginsDirectory}`);
 
 // Delete the Old Plugin using rimraf
-await rimraf(`${openplanetPluginsDirectory}/Predictor-DEV.op`);
+await rimraf(`${openplanetPluginsDirectory}/PredictorDev`);
 
-//Zip the Contents of the Source Directory
-zip(sourceDirectory, `${openplanetPluginsDirectory}/Predictor-DEV.op`);
+//Copy over the Dev Plugin to the Openplanet Plugins Folder
+cpSync(`${sourceDirectory}`, `${openplanetPluginsDirectory}/PredictorDev`, { recursive: true });
 
 //Zip the Contents of the Source Directory to the Releases Directory
 zip(sourceDirectory, `${process.cwd()}/Releases/Predictor.op`);

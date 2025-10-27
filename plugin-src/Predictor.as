@@ -358,7 +358,7 @@ namespace Predictor {
             if (localPlayer is null) return;
 
             // Check if race has started or restarted
-            if (localPlayer.StartTime > 0 && (!hasStarted || localPlayer.StartTime != startTime)) OnRaceStart(localPlayer.StartTime);
+            if (localPlayer.StartTime > 0 && (!hasStarted || localPlayer.StartTime != startTime)) OnRaceStart(localPlayer.StartTime, raceData.CPsToFinish);
 
             // Update checkpoint progress
             int newCheckpoint = localPlayer.CpCount;
@@ -398,7 +398,7 @@ namespace Predictor {
          * @param {uint} raceStartTime - The race start time
          * @private
          */
-        private void OnRaceStart(uint raceStartTime) {
+        private void OnRaceStart(uint raceStartTime, uint totalCheckpoints) {
             startTime = raceStartTime;
             hasStarted = true;
             currentCheckpoint = 0;
@@ -409,10 +409,15 @@ namespace Predictor {
             deltaTimeString = "+00:00.000";
             
             // Reset checkpoint splits array
-            for (uint i = 0; i < checkpointSplits.Length; i++) {
-                checkpointSplits[i] = 0;
-            }
+            for (uint i = 0; i < checkpointSplits.Length; i++) checkpointSplits[i] = 0;
             
+
+            // Resize the best splits and last run splits array to the total number of checkpoints
+            bestSplits.Resize(totalCheckpoints + 1);
+            checkpointSplits.Resize(totalCheckpoints + 1);
+            lastRunSplits.Resize(totalCheckpoints + 1);
+
+            // Log the start of the race
             print("Race started - checkpoint counter reset");
         }
 
