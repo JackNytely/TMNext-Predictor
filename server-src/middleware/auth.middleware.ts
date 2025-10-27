@@ -32,18 +32,16 @@ export async function authenticateRequest(request: FastifyRequest, reply: Fastif
 	// If the token is not present, return an error
 	if (!token) return reply.code(401).send({ error: 'Missing token' });
 
-	// Setup the URL Encoded Form
-	const formData = new FormData();
-
-	// Add the token and secret to the form data (Encoding the Values)
-	formData.append('token', encodeURIComponent(token));
-	formData.append('secret', encodeURIComponent(OPENPLANET_SECRET));
+	// Setup the URL Encoded Form Data
+	const urlEncodedData = new URLSearchParams();
+	urlEncodedData.append('token', token);
+	urlEncodedData.append('secret', OPENPLANET_SECRET);
 
 	// Setup the Request Options
 	const requestOptions: RequestInit = {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-		body: formData.toString(),
+		body: urlEncodedData.toString(),
 	};
 
 	// Validate token with Openplanet

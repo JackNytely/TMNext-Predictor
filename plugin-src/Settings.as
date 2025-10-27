@@ -77,6 +77,14 @@ namespace Predictor {
     vec4 checkpointShadowColor = vec4(0.0, 0.0, 0.0, 0.8);
 
     // ============================================================================
+    // DATABASE SETTINGS
+    // ============================================================================
+    
+    /** Whether to save splits to the server */
+    [Setting name="Save Splits to Server"]
+    bool saveToServer = false;
+
+    // ============================================================================
     // FUNCTIONALITY SETTINGS
     // ============================================================================
     

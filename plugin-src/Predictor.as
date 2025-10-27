@@ -1,4 +1,5 @@
 #include "Settings.as"
+#include "Database.as"
 
 /**
  * Main Predictor Plugin Namespace
@@ -131,6 +132,21 @@ namespace Predictor {
         
         /** Whether the font was successfully loaded */
         private bool fontLoaded = false;
+        
+        /** Database manager for server communication */
+        private DatabaseManager@ databaseManager;
+        
+        /** Server URL fetched from remote config */
+        private string serverUrl = "";
+        
+        /** HTTP request for fetching config */
+        private Net::HttpRequest@ configRequest = null;
+        
+        /** Whether config fetch is in progress */
+        private bool fetchingConfig = false;
+        
+        /** Whether config has been successfully loaded */
+        private bool configLoaded = false;
 
         /**
          * Initialize the predictor plugin
@@ -152,6 +168,12 @@ namespace Predictor {
             checkpointSplits.Resize(100);
             bestSplits.Resize(100);
             
+            // Initialize database manager
+            @databaseManager = InitializeDatabase();
+            
+            // Fetch remote config for API URL
+            FetchRemoteConfig();
+            
 #if DEPENDENCY_DID
             // Register DID providers for external overlay integration
             DID::registerLaneProviderAddon(PredictorProvider());
@@ -161,6 +183,62 @@ namespace Predictor {
             
             isInitialized = true;
             print("Predictor initialized successfully");
+        }
+
+        /**
+         * Set the authentication token for the database manager
+         * 
+         * @method SetDatabaseAuthToken
+         * @param {string} token - The authentication token
+         */
+        void SetDatabaseAuthToken(const string &in token) {
+            if (databaseManager !is null) {
+                databaseManager.SetAuthToken(token);
+            }
+        }
+
+        /**
+         * Fetch remote configuration from Openplanet plugin config endpoint
+         * 
+         * Retrieves the API URL from the plugin's configuration server
+         * 
+         * @method FetchRemoteConfig
+         * @private
+         */
+        private void FetchRemoteConfig() {
+            if (fetchingConfig) return;
+            
+            fetchingConfig = true;
+            @configRequest = Net::HttpRequest();
+            configRequest.Method = Net::HttpMethod::Get;
+            configRequest.Url = "https://openplanet.dev/plugin/predictor/config/config";
+            configRequest.Start();
+            
+            print("Fetching remote config...");
+        }
+
+        /**
+         * Check if the config fetch has completed
+         * 
+         * @method CheckConfigFetch
+         * @private
+         */
+        private void CheckConfigFetch() {
+
+            if (!fetchingConfig || configRequest is null) return;
+            
+            if (configRequest.Finished()) {
+                fetchingConfig = false;
+                
+                if (configRequest.ResponseCode() >= 200 && configRequest.ResponseCode() < 300) {
+                    Json::Value responseBody = configRequest.Json();
+                    serverUrl = responseBody["apiUrl"];
+                    print("Server URL: " + serverUrl);
+                } else {
+                    print("Failed to fetch remote config: " + configRequest.ResponseCode());
+                    @configRequest = null;
+                }
+            }
         }
 
         /**
@@ -175,6 +253,9 @@ namespace Predictor {
         void Update(float millisecondsSinceLastFrame) {
             if (!isInitialized) return;
 
+            // Check for config fetch completion
+            CheckConfigFetch();
+            
             // Check if we're currently in a race
             CheckGameState();
             
@@ -477,9 +558,14 @@ namespace Predictor {
             uint bestTotalTime = bestSplits[totalCheckpoints];
             
             // Calculate how much faster/slower we are compared to best
-            float paceRatio = float(currentTime) / float(bestTimeToCurrentCheckpoint);
-            
-            predictedTime = uint(float(bestTotalTime) * paceRatio);
+            // Prevent division by zero
+            if (bestTimeToCurrentCheckpoint > 0) {
+                float paceRatio = float(currentTime) / float(bestTimeToCurrentCheckpoint);
+                predictedTime = uint(float(bestTotalTime) * paceRatio);
+            } else {
+                // Fall back to linear prediction
+                CalculateLinearPrediction(currentTime);
+            }
         }
 
         /**
@@ -508,8 +594,14 @@ namespace Predictor {
             if (bestSplits.Length > totalCheckpoints && currentCheckpoint > 0) {
                 uint bestTimeToCurrentCheckpoint = bestSplits[currentCheckpoint];
                 uint bestTotalTime = bestSplits[totalCheckpoints];
-                float paceRatio = float(currentTime) / float(bestTimeToCurrentCheckpoint);
-                bestSplitsPrediction = uint(float(bestTotalTime) * paceRatio);
+                
+                // Prevent division by zero
+                if (bestTimeToCurrentCheckpoint > 0) {
+                    float paceRatio = float(currentTime) / float(bestTimeToCurrentCheckpoint);
+                    bestSplitsPrediction = uint(float(bestTotalTime) * paceRatio);
+                } else {
+                    bestSplitsPrediction = linearPrediction;
+                }
             } else {
                 bestSplitsPrediction = linearPrediction;
             }
@@ -682,6 +774,46 @@ namespace Predictor {
             file.Close();
             
             if (isNewBest) print("New best time saved!");
+
+            // Save to server if enabled and config is loaded
+            if (saveToServer && databaseManager !is null && configLoaded && serverUrl != "") {
+                SaveToServer(mapId, localPlayer);
+            }
+        }
+        
+        /**
+         * Save split data to the server
+         * 
+         * Converts the current run data into SplitData format and sends it to the server
+         * 
+         * @method SaveToServer
+         * @param {string} mapId - The current map ID
+         * @param {MLFeed::PlayerCpInfo_V4@} localPlayer - The local player data with checkpoint times
+         * @private
+         */
+        private void SaveToServer(const string &in mapId, const MLFeed::PlayerCpInfo_V4@ localPlayer) {
+            if (localPlayer is null) return;
+            
+            // Create array of checkpoint times
+            array<uint> checkpointTimes;
+            checkpointTimes.Resize(localPlayer.cpTimes.Length);
+            for (uint i = 0; i < localPlayer.cpTimes.Length; i++) {
+                checkpointTimes[i] = localPlayer.cpTimes[i];
+            }
+            
+            // Get the total time (last checkpoint time)
+            uint totalTime = checkpointTimes.Length > 0 ? checkpointTimes[checkpointTimes.Length - 1] : 0;
+            
+            // Create split data
+            SplitData@ splitData = SplitData(mapId, checkpointTimes, totalTime, "");
+            
+            // Save to server
+            bool success = databaseManager.SaveSplit(splitData, serverUrl);
+            if (success) {
+                print("Split data saved to server successfully");
+            } else {
+                print("Failed to save split data to server: " + databaseManager.GetLastError());
+            }
         }
 
         /**
@@ -1053,6 +1185,12 @@ namespace Predictor {
             UI::Text("  • Uses 70% Best Splits + 30% Linear Extrapolation weighting");
             UI::Text("  • Will use the inaccurate Linear prediction if map not finished before");
             UI::Text("  • Provides balanced accuracy between methods");
+            
+            UI::Separator();
+            
+            // Database settings
+            UI::Text("Database Settings:");
+            saveToServer = UI::Checkbox("Save Splits to Server", saveToServer);
         }
         
         /**

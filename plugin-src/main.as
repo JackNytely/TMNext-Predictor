@@ -12,6 +12,18 @@ Predictor::PredictorCore@ predictorCore;
 void Main() {
     @predictorCore = Predictor::PredictorCore();
     predictorCore.Initialize();
+    
+    // Start the task to get the token from Openplanet
+    auto tokenTask = Auth::GetToken();
+
+    // Wait until the task has finished
+    while (!tokenTask.Finished()) {
+        yield();
+    }
+
+    // Get the token and set it in the predictor
+    string token = tokenTask.Token();
+    predictorCore.SetDatabaseAuthToken(token);
 }
 
 /**
