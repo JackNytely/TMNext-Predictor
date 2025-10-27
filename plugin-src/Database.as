@@ -98,6 +98,12 @@ namespace Predictor {
         /** Whether a save operation is in progress */
         private bool isSaving = false;
         
+        /** Queue of split data waiting to be saved */
+        private array<SplitData@> pendingSplits;
+        
+        /** Queue of server URLs for pending saves */
+        private array<string> pendingUrls;
+        
         /**
          * Set the authentication token
          * 
@@ -122,24 +128,12 @@ namespace Predictor {
                 return false;
             }
             
-            // If save is in progress, check if it's finished
-            if (isSaving && saveRequest !is null) {
-                if (saveRequest.Finished()) {
-                    bool success = saveRequest.ResponseCode() >= 200 && saveRequest.ResponseCode() < 300;
-                    if (success) {
-                        string responseBody = saveRequest.String();
-                        print("Successfully saved split to server: " + responseBody);
-                    } else {
-                        string responseBody = saveRequest.String();
-                        lastError = "Server error (" + saveRequest.ResponseCode() + "): " + responseBody;
-                        print("Failed to save split to server: " + lastError);
-                    }
-                    isSaving = false;
-                    @saveRequest = null;
-                    return success;
-                }
-                // Still waiting
-                return false;
+            // If a save is in progress, queue this one
+            if (isSaving) {
+                pendingSplits.InsertLast(splitData);
+                pendingUrls.InsertLast(serverUrl);
+                print("Queued split for saving (currently " + pendingSplits.Length + " in queue)");
+                return true; // Return true because we've queued it successfully
             }
             
             // Check if token is set
@@ -148,6 +142,19 @@ namespace Predictor {
                 return false;
             }
             
+            // Start the save process
+            StartSave(splitData, serverUrl);
+            return true;
+        }
+        
+        /**
+         * Start a save operation
+         * 
+         * @param {SplitData@} splitData - The split data to save
+         * @param {string} serverUrl - The server URL to send data to
+         * @private
+         */
+        void StartSave(SplitData@ splitData, const string &in serverUrl) {
             // Construct the URL
             string url = serverUrl;
             if (!url.EndsWith("/")) url += "/";
@@ -167,13 +174,43 @@ namespace Predictor {
             // Send the request
             request.Start();
             
-            // Don't wait for response - return immediately and check on next call
             // Store the request to check later
             @saveRequest = request;
             isSaving = true;
-            
-            // Return false for now, actual result will be checked on next call
-            return false;
+        }
+        
+        /**
+         * Update method to check on pending saves
+         * Should be called regularly (e.g., every frame)
+         */
+        void Update() {
+            // If a save is in progress, check if it's finished
+            if (isSaving && saveRequest !is null) {
+                if (saveRequest.Finished()) {
+                    bool success = saveRequest.ResponseCode() >= 200 && saveRequest.ResponseCode() < 300;
+                    if (success) {
+                        string responseBody = saveRequest.String();
+                        print("Successfully saved split to server: " + responseBody);
+                    } else {
+                        string responseBody = saveRequest.String();
+                        lastError = "Server error (" + saveRequest.ResponseCode() + "): " + responseBody;
+                        print("Failed to save split to server: " + lastError);
+                    }
+                    
+                    isSaving = false;
+                    @saveRequest = null;
+                    
+                    // If there are pending saves, start the next one
+                    if (pendingSplits.Length > 0) {
+                        SplitData@ nextSplit = pendingSplits[0];
+                        string nextUrl = pendingUrls[0];
+                        pendingSplits.RemoveAt(0);
+                        pendingUrls.RemoveAt(0);
+                        print("Processing next queued split (" + pendingSplits.Length + " remaining)");
+                        StartSave(nextSplit, nextUrl);
+                    }
+                }
+            }
         }
         
         /**

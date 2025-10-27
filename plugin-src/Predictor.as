@@ -234,9 +234,11 @@ namespace Predictor {
                     Json::Value responseBody = configRequest.Json();
                     serverUrl = responseBody["apiUrl"];
                     print("Server URL: " + serverUrl);
+                    configLoaded = true; // Mark config as successfully loaded
                 } else {
                     print("Failed to fetch remote config: " + configRequest.ResponseCode());
                     @configRequest = null;
+                    configLoaded = false; // Mark config as failed to load
                 }
             }
         }
@@ -255,6 +257,11 @@ namespace Predictor {
 
             // Check for config fetch completion
             CheckConfigFetch();
+            
+            // Update database manager to process pending saves
+            if (databaseManager !is null) {
+                databaseManager.Update();
+            }
             
             // Check if we're currently in a race
             CheckGameState();
@@ -774,8 +781,9 @@ namespace Predictor {
             file.Close();
             
             if (isNewBest) print("New best time saved!");
+            else print("Run completed (not a best time)");
 
-            // Save to server if enabled and config is loaded
+            // Save to server if enabled (always save all completed runs, not just best)
             if (saveToServer && databaseManager !is null && configLoaded && serverUrl != "") {
                 SaveToServer(mapId, localPlayer);
             }
@@ -807,12 +815,12 @@ namespace Predictor {
             // Create split data
             SplitData@ splitData = SplitData(mapId, checkpointTimes, totalTime, "");
             
-            // Save to server
+            // Save to server (returns true if successful or queued)
             bool success = databaseManager.SaveSplit(splitData, serverUrl);
             if (success) {
-                print("Split data saved to server successfully");
+                print("Split data queued for server (total time: " + FormatTime(totalTime) + ")");
             } else {
-                print("Failed to save split data to server: " + databaseManager.GetLastError());
+                print("Failed to queue split for server: " + databaseManager.GetLastError());
             }
         }
 
