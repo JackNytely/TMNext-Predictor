@@ -170,7 +170,7 @@ namespace Predictor {
             // Construct the URL
             string url = serverUrl;
             if (!url.EndsWith("/")) url += "/";
-            url += "splits";
+            url += "splits/save";
             
             // Convert split data to JSON
             string jsonData = splitData.ToJson();

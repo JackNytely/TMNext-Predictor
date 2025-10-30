@@ -130,9 +130,6 @@ namespace Predictor {
         /** Font handle for text rendering */
         private nvg::Font font;
         
-        /** Whether the font was successfully loaded */
-        private bool fontLoaded = false;
-        
         /** Database manager for server communication */
         private DatabaseManager@ databaseManager;
         
@@ -171,7 +168,6 @@ namespace Predictor {
             
             // Load the font for text rendering
             font = nvg::LoadFont("DroidSans.ttf");
-            fontLoaded = !Math::IsNaN(font);
             
             // Reserve space for checkpoint data arrays
             checkpointSplits.Resize(100);
@@ -349,7 +345,7 @@ namespace Predictor {
 
             // Check interface visibility setting
             if (hideWithInterface) {
-                if (playground.Interface is null || Dev::GetOffsetUint32(playground.Interface, 0x1C) == 0) {
+                if (playground.Interface is null || !UI::IsGameUIVisible()) {
                     isInGame = false;
                     return;
                 }
@@ -974,7 +970,6 @@ namespace Predictor {
          */
         void Render() {
             if (!isInGame || !hasStarted) return;
-            if (!fontLoaded) return;
             
             vec2 screenSize = vec2(Draw::GetWidth(), Draw::GetHeight());
             // Initialize overlay position and size from settings once per session (persist across restarts)
