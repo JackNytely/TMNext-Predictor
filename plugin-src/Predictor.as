@@ -197,9 +197,18 @@ namespace Predictor {
          * @param {string} token - The authentication token
          */
         void SetDatabaseAuthToken(const string &in token) {
-            if (databaseManager !is null) {
-                databaseManager.SetAuthToken(token);
-            }
+            if (databaseManager !is null) databaseManager.SetAuthToken(token);
+        }
+
+        /**
+         * Get the authentication token for the database manager
+         * 
+         * @method GetDatabaseAuthToken
+         * @returns {string} The authentication token
+         */
+        string GetDatabaseAuthToken() {
+            if (databaseManager !is null) return databaseManager.GetAuthToken();
+            return "";
         }
 
         /**

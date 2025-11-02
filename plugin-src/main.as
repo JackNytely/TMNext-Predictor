@@ -12,24 +12,43 @@ Predictor::PredictorCore@ predictorCore;
 void Main() {
     @predictorCore = Predictor::PredictorCore();
     predictorCore.Initialize();
-    
-    // Start the task to get the token from Openplanet
+
+    RefreshToken();
+}
+
+void RefreshToken() {
+    // Check if the token is null and refresh it if it is
+    if (predictorCore.GetDatabaseAuthToken().Length > 0){
+        // Sleep for 1 second before refreshing the token again
+        sleep(1000);
+
+        // Refresh the token again
+        RefreshToken();
+    }
+
+     // Start the task to get the token from Openplanet
     auto tokenTask = Auth::GetToken();
 
     // Wait until the task has finished
-    while (!tokenTask.Finished()) {
-        yield();
-    }
-
+    while (!tokenTask.Finished()) yield();
+    
     // Get the token and set it in the predictor
     string token = tokenTask.Token();
     predictorCore.SetDatabaseAuthToken(token);
+
+    // Wait for 1 second before refreshing the token again
+    sleep(1000);
+
+    // Refresh the token again
+    RefreshToken();
 }
 
 /**
  * Update function (Runs every frame)
  */
 void Update(float millisecondsSinceLastFrame) {
+    
+    
     if (predictorCore !is null) predictorCore.Update(millisecondsSinceLastFrame);  
 }
 

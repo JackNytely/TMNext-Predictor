@@ -124,6 +124,15 @@ namespace Predictor {
         void SetAuthToken(const string &in token) {
             authToken = token;
         }
+
+        /**
+         * Get the authentication token
+         * 
+         * @returns {string} The authentication token
+         */
+        string GetAuthToken() {
+            return authToken;
+        }
         
         /**
          * Save split data to the server
@@ -189,6 +198,9 @@ namespace Predictor {
             // Store the request to check later
             @saveRequest = request;
             isSaving = true;
+
+            // Clear the authentication token to prevent reuse
+            ClearAuthToken();
         }
         
         /**
@@ -317,6 +329,9 @@ namespace Predictor {
             isFetching = true;
             lastFetchSuccess = false;
             lastFetchedData = Json::Value();
+
+            // Clear the authentication token to prevent reuse
+            ClearAuthToken();
         }
         
         /**
