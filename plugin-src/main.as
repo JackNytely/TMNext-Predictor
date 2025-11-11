@@ -24,6 +24,9 @@ void RefreshToken() {
 
         // Refresh the token again
         RefreshToken();
+
+        // End the function
+        return;
     }
 
      // Start the task to get the token from Openplanet
