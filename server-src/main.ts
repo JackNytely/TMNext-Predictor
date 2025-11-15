@@ -5,6 +5,7 @@ import cors from '@fastify/cors';
 // Internal Imports
 import { database } from './database/database';
 import { registerSplitRoutes } from './routes/splits.route';
+import { registerAuthRoutes } from './routes/auth.route';
 
 // Setup the Environment Variables
 const PORT = process.env.PORT || 3000;
@@ -23,6 +24,7 @@ await fastify.register(cors, {
 await database.connect();
 
 // Register routes
+await fastify.register(registerAuthRoutes);
 await fastify.register(registerSplitRoutes);
 
 // Health check endpoint
