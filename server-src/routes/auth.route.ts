@@ -30,8 +30,8 @@ export async function authenticateUser(request: AuthUserRequest, reply: FastifyR
 	// If the Openplanet Secret is not configured, return an error
 	if (!OPENPLANET_SECRET || !JWT_SECRET) return reply.code(500).send({ error: 'Server authentication not configured' });
 
-	// Get the Openplanet Token from the request
-	const token = request.openplanetToken;
+	// Get the Openplanet Token from the request body
+	const token = request.body?.openplanetToken;
 
 	// If the token is not present, return an error
 	if (!token) return reply.code(401).send({ error: 'Missing body parameter: openplanetToken' });
