@@ -400,8 +400,8 @@ namespace Predictor {
                             ParseServerSplits(fetchedData);
                         } else {
                             print("Server splits fetch failed: " + databaseManager.GetLastError());
-                            // Fall back to local splits
-                            LoadBestSplits(currentMapId);
+                            // Clear splits since server fetch failed
+                            ClearBestSplits();
                         }
                     }
                 }
@@ -532,7 +532,7 @@ namespace Predictor {
             // Check if server splits should be used
             serverSplitsEnabled = useServerSplits && configLoaded;
             
-            // Load best splits for this map
+            // Load best splits for this map from server
             if (serverSplitsEnabled && databaseManager !is null && serverUrl != "") {
                 // Fetch server splits
                 string type = splitSourceType == SplitSourceType::PersonalBest ? "personalBest" : "globalBest";
@@ -542,21 +542,19 @@ namespace Predictor {
                 if (databaseManager.FetchSplits(mapId, serverUrl, type)) {
                     fetchingServerSplits = true;
                 } else {
-                    print("Failed to fetch server splits: " + databaseManager.GetLastError());
-                    // Fall back to local splits
-                    print("Falling back to local splits");
-                    LoadBestSplits(mapId);
+                    print("Failed to start server splits fetch: " + databaseManager.GetLastError());
+                    ClearBestSplits();
                 }
             } else {
-                // Use local splits
+                // Server splits disabled or not configured
                 if (!serverSplitsEnabled) {
-                    print("Using local splits (server splits disabled)");
+                    print("Server splits disabled in settings");
                 } else if (databaseManager is null) {
-                    print("Database manager not initialized, using local splits");
+                    print("Database manager not initialized");
                 } else if (serverUrl == "") {
-                    print("Server URL not configured, using local splits");
+                    print("Server URL not configured");
                 }
-                LoadBestSplits(mapId);
+                ClearBestSplits();
             }
         }
 
@@ -620,8 +618,8 @@ namespace Predictor {
                     lastCheckpointTime = localPlayer.cpTimes[checkpoint];
                     currentCheckpoint = checkpoint;
                     
-                    // Check if race is finished and save best splits
-                    if (checkpoint == totalCheckpoints && localPlayer.IsFinished) SaveBestSplits(currentMapId);
+                    // Check if race is finished and save run data
+                    if (checkpoint == totalCheckpoints && localPlayer.IsFinished) SaveRunData(currentMapId);
                     
                 }
             }
@@ -851,35 +849,15 @@ namespace Predictor {
         }
 
         /**
-         * Load best splits from file for the current map
+         * Clear best splits for the current map
          * 
-         * @method LoadBestSplits
-         * @param {string} mapId - The map ID to load splits for
+         * @method ClearBestSplits
          * @private
          */
-        private void LoadBestSplits(const string &in mapId) {
-            // Load best splits from file
-            string filePath = IO::FromStorageFolder("Splits/" + mapId + ".json");
-            
-            if (IO::FileExists(filePath)) {
-                try {
-                    IO::File file(filePath, IO::FileMode::Read);
-                    string content = file.ReadToEnd();
-                    file.Close();
-                    
-                    // Parse JSON and extract splits
-                    ParseBestSplits(content);
-                } catch {
-                    // If loading fails, use empty array
-                    for (uint i = 0; i < bestSplits.Length; i++) {
-                        bestSplits[i] = 0;
-                    }
-                }
-            } else {
-                // No best splits file exists
-                for (uint i = 0; i < bestSplits.Length; i++) {
-                    bestSplits[i] = 0;
-                }
+        private void ClearBestSplits() {
+            // Clear all best splits
+            for (uint i = 0; i < bestSplits.Length; i++) {
+                bestSplits[i] = 0;
             }
         }
         
@@ -894,16 +872,34 @@ namespace Predictor {
             try {
                 // Expected format: {"success":true,"data":[{"checkpointTimes":[...],...}]}
                 
+                // Check if response has success field
+                if (jsonData.HasKey("success")) {
+                    bool success = jsonData["success"];
+                    if (!success) {
+                        throw("Server returned success: false");
+                    }
+                }
+                
                 // Get the data array
                 if (!jsonData.HasKey("data")) {
                     throw("No data key found");
                 }
                 
-                if (jsonData["data"].GetType() != Json::Type::Array) {
+                Json::Value dataArray = jsonData["data"];
+                
+                if (dataArray.GetType() != Json::Type::Array) {
                     throw("data is not an array");
                 }
                 
-                Json::Value dataArray = jsonData["data"];
+                // Check if array is empty
+                uint arrayLength = dataArray.Length;
+                
+                if (arrayLength == 0) {
+                    print("No splits found on server for this map");
+                    // Clear best splits
+                    ClearBestSplits();
+                    return;
+                }
                 
                 // Get the first split
                 Json::Value firstSplit = dataArray[0];
@@ -913,89 +909,62 @@ namespace Predictor {
                     throw("No checkpointTimes key found");
                 }
                 
-                if (firstSplit["checkpointTimes"].GetType() != Json::Type::Array) {
+                Json::Value cpTimesArray = firstSplit["checkpointTimes"];
+                
+                if (cpTimesArray.GetType() != Json::Type::Array) {
                     throw("checkpointTimes is not an array");
                 }
                 
-                Json::Value cpTimesArray = firstSplit["checkpointTimes"];
+                // Get the length of checkpoint times
+                uint cpLength = cpTimesArray.Length;
                 
-                // Extract checkpoint times from the array
-                // We'll use a reasonable maximum and check as we go
-                array<uint> tempSplits;
-                tempSplits.Resize(1000); // Reasonable maximum for checkpoints
-                
-                uint actualCount = 0;
-                try {
-                    for (uint i = 0; i < 1000; i++) {
-                        Json::Value cpTime = cpTimesArray[i];
-                        if (cpTime.GetType() == Json::Type::Number) {
-                            // Get the value as string and parse it
-                            string timeStr = string(cpTime);
-                            uint timeValue = Text::ParseUInt(timeStr);
-                            tempSplits[actualCount] = timeValue;
-                            actualCount++;
-                        } else if (cpTime.GetType() == Json::Type::Null) {
-                            break;
-                        }
-                    }
-                } catch {
-                    // Reached end of array or invalid access
-                }
-                
-                if (actualCount == 0) {
+                if (cpLength == 0) {
                     throw("Empty checkpointTimes array");
                 }
                 
-                // Resize to actual count
-                serverBestSplits.Resize(actualCount);
-                for (uint i = 0; i < actualCount; i++) {
+                // Extract checkpoint times from the array
+                array<uint> tempSplits;
+                tempSplits.Resize(cpLength);
+                
+                for (uint i = 0; i < cpLength; i++) {
+                    Json::Value cpTime = cpTimesArray[i];
+                    
+                    if (cpTime.GetType() == Json::Type::Number) {
+                        tempSplits[i] = uint(cpTime);
+                    }
+                }
+                
+                // Copy to server best splits
+                serverBestSplits.Resize(cpLength);
+                for (uint i = 0; i < cpLength; i++) {
                     serverBestSplits[i] = tempSplits[i];
                 }
                 
                 // Copy server splits to bestSplits for use in predictions
-                if (serverBestSplits.Length > 0) {
-                    bestSplits.Resize(serverBestSplits.Length);
-                    for (uint i = 0; i < serverBestSplits.Length; i++) {
-                        bestSplits[i] = serverBestSplits[i];
-                    }
-                    print("Loaded " + serverBestSplits.Length + " server splits for predictions");
+                bestSplits.Resize(serverBestSplits.Length);
+                for (uint i = 0; i < serverBestSplits.Length; i++) {
+                    bestSplits[i] = serverBestSplits[i];
                 }
+                
+                print("Successfully loaded " + serverBestSplits.Length + " server splits for predictions");
                 
             } catch {
                 print("Failed to parse server splits");
-                // Fall back to local splits
-                LoadBestSplits(currentMapId);
+                // Clear best splits since we couldn't load from server
+                ClearBestSplits();
             }
         }
 
         /**
-         * Parse best splits from JSON content
+         * Save run data after finishing
          * 
-         * Simple JSON parsing for splits array. In practice, you'd use a proper JSON library.
+         * Saves the run to the server (always saves all completed runs)
          * 
-         * @method ParseBestSplits
-         * @param {string} content - JSON content to parse
-         * @private
-         */
-        private void ParseBestSplits(const string &in content) {
-            // Simple JSON parsing for splits array
-            array<string> parts = content.Split(",");
-            for (uint i = 0; i < parts.Length && i < bestSplits.Length; i++) {
-                bestSplits[i] = Text::ParseUInt(parts[i]);
-            }
-        }
-
-        /**
-         * Save best splits to file for the current map
-         * 
-         * Only saves if the race is finished. Compares with existing best time
-         * and updates if this is a new personal best.
-         * 
-         * @method SaveBestSplits
+         * @method SaveRunData
          * @param {string} mapId - The map ID to save splits for
          * @private
          */
-        private void SaveBestSplits(const string &in mapId) {
+        private void SaveRunData(const string &in mapId) {
             if (currentCheckpoint != totalCheckpoints) return; // Only save if race is finished
             
             // Get final checkpoint times from MLFeedRaceData
@@ -1011,40 +980,7 @@ namespace Predictor {
                 lastRunSplits[i] = localPlayer.cpTimes[i];
             }
             
-            // Check if this is a new best time
-            bool isNewBest = false;
-            if (bestSplits.Length <= uint(totalCheckpoints) || localPlayer.cpTimes[uint(totalCheckpoints)] < bestSplits[uint(totalCheckpoints)]) {
-                isNewBest = true;
-                // Update best splits
-                bestSplits.Resize(localPlayer.cpTimes.Length);
-                for (uint i = 0; i < localPlayer.cpTimes.Length; i++) {
-                    bestSplits[i] = localPlayer.cpTimes[i];
-                }
-            }
-            
-            string filePath = IO::FromStorageFolder("Splits/" + mapId + ".json");
-            
-            // Create the Splits folder if it doesn't exist
-            if (!IO::FolderExists(IO::FromStorageFolder("Splits/"))) IO::CreateFolder(IO::FromStorageFolder("Splits/"), true);
-            
-        
-            // Build JSON content using MLFeedRaceData's checkpoint times
-            string content = "[";
-            for (uint i = 0; i <= uint(totalCheckpoints) && i < localPlayer.cpTimes.Length; i++) {
-                if (i > 0) content += ",";
-                content += "" + localPlayer.cpTimes[i];
-            }
-            content += "]";
-            
-            // Save to file
-            IO::File file(filePath, IO::FileMode::Write);
-            file.Write(content);
-            file.Close();
-            
-            if (isNewBest) print("New best time saved!");
-            else print("Run completed (not a best time)");
-
-            // Save to server if enabled (always save all completed runs, not just best)
+            // Save to server if enabled
             if (saveToServer && databaseManager !is null && configLoaded && serverUrl != "") {
                 SaveToServer(mapId, localPlayer);
             }
@@ -1576,9 +1512,10 @@ namespace Predictor {
         }
         
         /**
-         * Save manually edited splits to file
+         * Save manually edited splits
          * 
-         * Converts string times back to uint values and updates the best splits.
+         * Converts string times back to uint values and updates the best splits in memory.
+         * Note: This only updates the local prediction data, not server data.
          * 
          * @method SaveManualSplits
          * @private
@@ -1594,11 +1531,7 @@ namespace Predictor {
                 bestSplits[i] = timeMs;
             }
             
-            // Save to file
-            if (currentMapId != "") {
-                SaveBestSplits(currentMapId);
-                print("Manual splits saved for map: " + currentMapId);
-            }
+            print("Manual splits updated in memory for current session");
         }
         
         /**

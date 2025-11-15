@@ -2,7 +2,7 @@
 import { SplitModel } from '../database/models/split.model';
 import { findOrCreatePlayer } from './player.service';
 import { findOrCreateMap } from './map.service';
-import type { SaveSplitData, TMNextSplit } from '../types/types';
+import type { PopulatedTMNextSplit, SaveSplitData } from '../types/types';
 
 /**
  * Save a new split
@@ -12,7 +12,12 @@ import type { SaveSplitData, TMNextSplit } from '../types/types';
  * @param splitData The data for the split
  * @returns The new split
  */
-export async function saveSplit(accountId: string, displayName: string, mapId: string, splitData: SaveSplitData): Promise<TMNextSplit> {
+export async function saveSplit(
+	accountId: string,
+	displayName: string,
+	mapId: string,
+	splitData: SaveSplitData,
+): Promise<PopulatedTMNextSplit> {
 	// Get or create player and map
 	const player = await findOrCreatePlayer(accountId, displayName);
 	const map = await findOrCreateMap(mapId);
@@ -27,7 +32,7 @@ export async function saveSplit(accountId: string, displayName: string, mapId: s
 	});
 
 	// Return the new split
-	return split;
+	return split as unknown as PopulatedTMNextSplit;
 }
 
 /**
@@ -36,7 +41,7 @@ export async function saveSplit(accountId: string, displayName: string, mapId: s
  * @param mapId The ID of the map
  * @returns The splits for the player
  */
-export async function getPlayerSplits(accountId: string, mapId: string): Promise<Array<TMNextSplit>> {
+export async function getPlayerSplits(accountId: string, mapId: string): Promise<Array<PopulatedTMNextSplit>> {
 	// Find the Map
 	const map = await findOrCreateMap(mapId);
 
@@ -47,7 +52,7 @@ export async function getPlayerSplits(accountId: string, mapId: string): Promise
 		.sort({ totalTime: 1 });
 
 	// Return the splits
-	return splits;
+	return splits as unknown as Array<PopulatedTMNextSplit>;
 }
 
 /**
@@ -56,7 +61,7 @@ export async function getPlayerSplits(accountId: string, mapId: string): Promise
  * @param mapId The ID of the map
  * @returns The best split for the player
  */
-export async function getPlayerBestSplit(accountId: string, mapId: string): Promise<TMNextSplit | null> {
+export async function getPlayerBestSplit(accountId: string, mapId: string): Promise<PopulatedTMNextSplit | null> {
 	// Find the Map
 	const map = await findOrCreateMap(mapId);
 
@@ -67,7 +72,7 @@ export async function getPlayerBestSplit(accountId: string, mapId: string): Prom
 		.sort({ totalTime: 1 });
 
 	// Return the splits
-	return split;
+	return split as unknown as PopulatedTMNextSplit;
 }
 
 /**
@@ -75,13 +80,16 @@ export async function getPlayerBestSplit(accountId: string, mapId: string): Prom
  * @param mapId The ID of the map
  * @returns The global best split for the map
  */
-export async function getGlobalBestSplit(mapId: string): Promise<TMNextSplit | null> {
+export async function getGlobalBestSplit(mapId: string): Promise<PopulatedTMNextSplit | null> {
 	// Find the Map
 	const map = await findOrCreateMap(mapId);
 
 	// Find the global best split for the map
 	const split = await SplitModel.findOne({ mapId: map._id }).populate('playerId').populate('mapId').sort({ totalTime: 1 });
 
+	// Log the global best split
+	console.log('Global Best Split:', split);
+
 	// Return the global best split
-	return split;
+	return split as unknown as PopulatedTMNextSplit;
 }

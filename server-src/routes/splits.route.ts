@@ -4,7 +4,14 @@ import { FastifyInstance, FastifyReply } from 'fastify';
 // Internal Imports
 import { getGlobalBestSplit, getPlayerBestSplit, getPlayerSplits, saveSplit } from '../services/split.service';
 import { authenticateRequest } from '../middleware/auth.middleware';
-import { GetSplitsType, type AuthenticatedRequest, type GetSplitsRequest, type SaveSplitRequest, type TMNextSplit } from '../types/types';
+import {
+	GetSplitsType,
+	PopulatedTMNextSplit,
+	type AuthenticatedRequest,
+	type GetSplitsRequest,
+	type SaveSplitRequest,
+	type TMNextSplit,
+} from '../types/types';
 
 /**
  * Register the Split Routes
@@ -105,7 +112,12 @@ async function getSplitsHandler(request: GetSplitsRequest, reply: FastifyReply) 
 	if (!type) return reply.code(400).send({ error: 'type is required' });
 
 	// Setup the Splits Array
-	const splits: Array<TMNextSplit> = new Array();
+	const splits: Array<PopulatedTMNextSplit> = new Array();
+
+	// Log the user ID and map ID
+	console.log('User ID:', userId);
+	console.log('Map ID:', mapId);
+	console.log('Type:', type);
 
 	// Check if the Type Is All
 	if (type === GetSplitsType.ALL) {
@@ -134,6 +146,22 @@ async function getSplitsHandler(request: GetSplitsRequest, reply: FastifyReply) 
 		if (personalBestSplit) splits.push(personalBestSplit);
 	}
 
+	// Map the Splits to a proper response format
+	const mappedSplits = splits.map(split => ({
+		id: split._id.toString(),
+		playerId: split.playerId._id.toString(),
+		mapId: split.mapId._id.toString(),
+		checkpointTimes: split.checkpointTimes,
+		totalTime: split.totalTime,
+		runDate: split.runDate,
+	}));
+
+	// Setup the Response Data
+	const data = { success: true, data: mappedSplits };
+
+	// Log the response data
+	console.log('Data:', data);
+
 	// Return the response
-	return reply.code(200).send({ success: true, data: splits });
+	return reply.code(200).send(data);
 }

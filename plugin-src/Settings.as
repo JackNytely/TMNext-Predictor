@@ -88,9 +88,9 @@ namespace Predictor {
     [Setting name="Save Splits to Server"]
     bool saveToServer = false;
     
-    /** Whether to use server splits for prediction (instead of local) */
+    /** Whether to fetch and use server splits for prediction */
     [Setting name="Use Server Splits for Prediction"]
-    bool useServerSplits = false;
+    bool useServerSplits = true;
     
     /** Which type of server splits to use for prediction */
     [Setting name="Server Split Type"]
