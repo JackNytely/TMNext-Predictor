@@ -13,37 +13,7 @@ void Main() {
     @predictorCore = Predictor::PredictorCore();
     predictorCore.Initialize();
 
-    RefreshToken();
-}
-
-void RefreshToken() {
-    // Check if the token is null and refresh it if it is
-    if (predictorCore.GetDatabaseAuthToken().Length > 0){
-        // Sleep for 1 second before refreshing the token again
-        sleep(1000);
-
-        // Refresh the token again
-        RefreshToken();
-
-        // End the function
-        return;
-    }
-
-     // Start the task to get the token from Openplanet
-    auto tokenTask = Auth::GetToken();
-
-    // Wait until the task has finished
-    while (!tokenTask.Finished()) yield();
-    
-    // Get the token and set it in the predictor
-    string token = tokenTask.Token();
-    predictorCore.SetDatabaseAuthToken(token);
-
-    // Wait for 1 second before refreshing the token again
-    sleep(1000);
-
-    // Refresh the token again
-    RefreshToken();
+    startnew(ServerAuthenticationCoroutine);
 }
 
 /**
@@ -76,5 +46,15 @@ void RenderMenu() {
     if (UI::BeginMenu(Icons::Clock + " Predictor")) {
         predictorCore.RenderMenu();
         UI::EndMenu();
+    }
+}
+
+void ServerAuthenticationCoroutine() {
+    while (predictorCore is null) yield();
+
+    while (!predictorCore.AuthenticateWithServer()) {
+        print("Predictor: server authentication failed, retrying in 5 seconds...");
+        sleep(5000);
+        while (predictorCore is null) yield();
     }
 }

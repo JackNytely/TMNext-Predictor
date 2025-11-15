@@ -212,6 +212,41 @@ namespace Predictor {
         }
 
         /**
+         * Authenticate with the backend server by exchanging the Openplanet token
+         * for a reusable JWT issued by our server.
+         *
+         * This method must be called from a coroutine (startnew) so it can yield
+         * while waiting for async operations to finish.
+         *
+         * @returns {bool} True when authentication succeeds
+         */
+        bool AuthenticateWithServer() {
+            if (databaseManager is null) return false;
+            if (databaseManager.GetAuthToken().Length > 0) return true;
+
+            // Wait for remote config fetch to complete so we know the server URL
+            while (fetchingConfig) yield();
+
+            if (!configLoaded || serverUrl.Length == 0) {
+                if (!fetchingConfig) FetchRemoteConfig();
+                print("Predictor: server configuration unavailable, retrying soon...");
+                return false;
+            }
+
+            print("Predictor: requesting Openplanet token for server authentication...");
+            auto tokenTask = Auth::GetToken();
+            while (!tokenTask.Finished()) yield();
+
+            string openplanetToken = tokenTask.Token();
+            if (openplanetToken.Length == 0) {
+                print("Predictor: received empty Openplanet token");
+                return false;
+            }
+
+            return ExchangeOpenplanetToken(openplanetToken);
+        }
+
+        /**
          * Fetch remote configuration from Openplanet plugin config endpoint
          * 
          * Retrieves the API URL from the plugin's configuration server
@@ -238,23 +273,103 @@ namespace Predictor {
          * @private
          */
         private void CheckConfigFetch() {
-
+            // If the config fetch is not in progress or the config request is null, return
             if (!fetchingConfig || configRequest is null) return;
             
-            if (configRequest.Finished()) {
-                fetchingConfig = false;
-                
-                if (configRequest.ResponseCode() >= 200 && configRequest.ResponseCode() < 300) {
-                    Json::Value responseBody = configRequest.Json();
-                    serverUrl = responseBody["apiUrl"];
-                    print("Server URL: " + serverUrl);
-                    configLoaded = true; // Mark config as successfully loaded
-                } else {
-                    print("Failed to fetch remote config: " + configRequest.ResponseCode());
-                    @configRequest = null;
-                    configLoaded = false; // Mark config as failed to load
-                }
+            // If the config request is not finished, return
+            if (!configRequest.Finished()) return;
+
+            // Set the fetching config to false
+            fetchingConfig = false;
+
+            // If the config request is not successful, return
+            bool success = configRequest.ResponseCode() >= 200 && configRequest.ResponseCode() < 300;
+
+            // If the config request is not successful, return
+            if (!success) {
+                // Log the error
+                print("Failed to fetch remote config: " + configRequest.ResponseCode());
+
+                // Set the config request to null
+                @configRequest = null;
+
+                // Set the config loaded to false
+                configLoaded = false;
+
+                // Return
+                return;
             }
+
+            // Get the response body
+            Json::Value responseBody = configRequest.Json();
+
+            // Set the server url
+            serverUrl = responseBody["apiUrl"];
+
+            // Log the server url
+            print("Server URL: " + serverUrl);
+
+            // Set the config loaded to true
+            configLoaded = true;
+        }
+
+        /**
+         * Exchange the Openplanet token for a backend-issued JWT
+         *
+         * @param openplanetToken The single-use Openplanet authentication token
+         * @returns {bool} True if the exchange succeeded
+         * @private
+         */
+        private bool ExchangeOpenplanetToken(const string &in openplanetToken) {
+            string authUrl = BuildServerUrl("auth");
+            if (authUrl.Length == 0) return false;
+
+            Net::HttpRequest@ authRequest = Net::HttpRequest();
+            authRequest.Method = Net::HttpMethod::Post;
+            authRequest.Url = authUrl;
+            authRequest.Headers.Set("Content-Type", "application/json");
+            authRequest.Body = "{\"openplanetToken\":\"" + openplanetToken + "\"}";
+            authRequest.Start();
+
+            while (!authRequest.Finished()) yield();
+
+            bool success = authRequest.ResponseCode() >= 200 && authRequest.ResponseCode() < 300;
+            if (!success) {
+                string responseBody = authRequest.String();
+                print("Predictor: server auth failed (" + authRequest.ResponseCode() + "): " + responseBody);
+                return false;
+            }
+
+            try {
+                Json::Value responseBody = authRequest.Json();
+                bool hasToken = responseBody.HasKey("data") && responseBody["data"].HasKey("token");
+                if (!hasToken) {
+                    print("Predictor: server auth response missing token field");
+                    return false;
+                }
+
+                string serverToken = responseBody["data"]["token"];
+                databaseManager.SetAuthToken(serverToken);
+                print("Predictor: server authentication successful");
+                return true;
+            } catch {
+                print("Predictor: failed to parse server auth response JSON");
+                return false;
+            }
+        }
+
+        /**
+         * Utility helper that produces a full API URL for a specific endpoint.
+         *
+         * @param endpoint Relative endpoint name (e.g. "auth")
+         * @returns {string} Fully-qualified URL or empty string if serverUrl missing
+         * @private
+         */
+        private string BuildServerUrl(const string &in endpoint) const {
+            if (serverUrl.Length == 0) return "";
+            string url = serverUrl;
+            if (!url.EndsWith("/")) url += "/";
+            return url + endpoint;
         }
 
         /**

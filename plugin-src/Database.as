@@ -198,9 +198,6 @@ namespace Predictor {
             // Store the request to check later
             @saveRequest = request;
             isSaving = true;
-
-            // Clear the authentication token to prevent reuse
-            ClearAuthToken();
         }
         
         /**
@@ -329,9 +326,6 @@ namespace Predictor {
             isFetching = true;
             lastFetchSuccess = false;
             lastFetchedData = Json::Value();
-
-            // Clear the authentication token to prevent reuse
-            ClearAuthToken();
         }
         
         /**
