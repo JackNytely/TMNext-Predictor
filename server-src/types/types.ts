@@ -2,8 +2,11 @@
 export { GetSplitsType } from './enums/get-splits-type.enum';
 
 // Export the Interfaces
+export { type AuthUserRequest } from './interfaces/auth-user-request.interface';
+export { type AuthUserResponse } from './interfaces/auth-user-response.interface';
 export { type AuthValidationResponse } from './interfaces/auth-validation-response.interface';
 export { type AuthenticatedRequest } from './interfaces/authenticated-request.interface';
+export { type AuthenticationPayload } from './interfaces/authentication-payload.interface';
 export { type GetSplitsRequest } from './interfaces/get-splits-request.interface';
 export { type SaveSplitData } from './interfaces/save-split-data.interface';
 export { type SaveSplitRequest } from './interfaces/save-split-request.interface';
